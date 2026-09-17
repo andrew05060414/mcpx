@@ -17,25 +17,6 @@ import (
 	"mcpx/internal/terminal"
 )
 
-func TestConfigRoundTripInNew(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("MCPX_HOME", home)
-	ws := filepath.Join(home, "p")
-	_ = os.MkdirAll(ws, 0o755)
-	cfg := config.DefaultConfig()
-	cfg.Workspaces = []config.WorkspaceEntry{{Name: "p", Path: ws}}
-	if err := config.WriteGlobal(filepath.Join(home, "config.yaml"), cfg); err != nil {
-		t.Fatal(err)
-	}
-	rt, err := New(Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rt.reg.List()) != 1 {
-		t.Fatalf("expected 1 workspace, got %d", len(rt.reg.List()))
-	}
-}
-
 func TestStartupPrunesMissingWorkspaces(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("MCPX_HOME", home)

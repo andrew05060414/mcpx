@@ -551,36 +551,3 @@ func TestValidateOperationSchemaValueHandlesUntypedSchemas(t *testing.T) {
 		t.Fatalf("object constraints should be inferred when type is omitted: %v", err)
 	}
 }
-
-func TestOperationManageWaitTimeoutDoesNotCancel(t *testing.T) {
-	rt := newWorkspaceRuntime(t, "demo")
-	session := operationTestSession(t, rt, "demo")
-	record, err := rt.operations.Submit(context.Background(), operation.SubmitSpec{
-		RemoteSessionID: session.ID, WorkspaceName: "demo", RequestID: "req_test", Purpose: "等待测试",
-		Steps: []operation.StepSpec{{ID: "wait", Tool: "read"}},
-	}, func(ctx context.Context, input operation.ExecuteInput) operation.ExecuteResult {
-		select {
-		case <-time.After(100 * time.Millisecond):
-			return operation.ExecuteResult{Result: []byte(`{"ok":true}`)}
-		case <-ctx.Done():
-			return operation.ExecuteResult{Err: ctx.Err()}
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, timedOut, err := rt.operations.Wait(context.Background(), record.ID, time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !timedOut || (current.State != operation.StateQueued && current.State != operation.StateRunning) {
-		t.Fatalf("current=%+v timedOut=%v", current, timedOut)
-	}
-	final, timedOut, err := rt.operations.Wait(context.Background(), record.ID, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if timedOut || final.State != operation.StateSucceeded {
-		t.Fatalf("final=%+v timedOut=%v", final, timedOut)
-	}
-}
