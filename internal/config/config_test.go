@@ -213,6 +213,97 @@ func TestRegisterWorkspaceAndLoad(t *testing.T) {
 	}
 }
 
+func TestPruneMissingWorkspacesPersistsRemoval(t *testing.T) {
+	dir := t.TempDir()
+	global := filepath.Join(dir, "config.yaml")
+	valid := filepath.Join(dir, "valid")
+	if err := os.MkdirAll(valid, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "missing")
+	filePath := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.Workspaces = []WorkspaceEntry{
+		{Name: "valid", Path: valid},
+		{Name: "missing", Path: missing},
+		{Name: "file", Path: filePath},
+		{Name: "empty-path", Path: ""},
+	}
+	if err := WriteGlobal(global, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	pruned, removed, pending, err := PruneMissingWorkspaces(global, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 3 {
+		t.Fatalf("removed=%+v", removed)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending=%+v", pending)
+	}
+	if len(pruned.Workspaces) != 1 || pruned.Workspaces[0].Name != "valid" {
+		t.Fatalf("pruned=%+v", pruned.Workspaces)
+	}
+
+	onDisk, err := LoadGlobal(global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk.Workspaces) != 1 || onDisk.Workspaces[0].Name != "valid" {
+		t.Fatalf("on disk=%+v", onDisk.Workspaces)
+	}
+}
+
+func TestPruneMissingWorkspacesWaitsWhenParentUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	global := filepath.Join(dir, "config.yaml")
+	volume := filepath.Join(dir, "volume")
+	project := filepath.Join(volume, "code", "project")
+
+	cfg := DefaultConfig()
+	cfg.Workspaces = []WorkspaceEntry{{Name: "project", Path: project}}
+	if err := WriteGlobal(global, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	pruned, removed, pending, err := PruneMissingWorkspaces(global, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("unavailable parent must not be removed: %+v", removed)
+	}
+	if len(pending) != 1 || pending[0] != "project" {
+		t.Fatalf("pending=%+v", pending)
+	}
+	if len(pruned.Workspaces) != 1 {
+		t.Fatalf("registration was dropped: %+v", pruned.Workspaces)
+	}
+	onDisk, err := LoadGlobal(global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk.Workspaces) != 1 {
+		t.Fatalf("persisted registration was dropped: %+v", onDisk.Workspaces)
+	}
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pruned, removed, pending, err = PruneMissingWorkspaces(global, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 || len(pending) != 0 || len(pruned.Workspaces) != 1 {
+		t.Fatalf("ready workspace not kept: removed=%v pending=%v workspaces=%+v", removed, pending, pruned.Workspaces)
+	}
+}
+
 func TestMergeMCP(t *testing.T) {
 	g := MCPFile{MCPServers: map[string]MCPServer{
 		"github": {Command: "g", Type: "stdio"},
