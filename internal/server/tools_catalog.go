@@ -482,6 +482,78 @@ func (r *Runtime) registerConsolidatedToolsCatalog(s *mcp.Server) {
 	}
 	r.addTool(s, cleanActionTool("mcp_tool", toolDesc["mcp_tool"], mcpCommon, mcpBranches, mcpToolAnnotation), r.toolMCPTool)
 
+	browserTabID := stringSchema("Browser Service 返回的标签页 ID；用户现有标签页先用 tabs 获取，操作前通常先 claim")
+	browserTimeout := map[string]any{"type": "integer", "minimum": 0, "maximum": 60000, "description": "浏览器动作超时（毫秒）"}
+	browserKeys := arraySchema(stringSchema("按键名，如 Control、Shift、Enter、A"), "同时按下或发送的按键序列")
+	browserKeys["minItems"] = 1
+	browserPath := arraySchema(map[string]any{
+		"type": "object", "additionalProperties": false,
+		"properties": map[string]any{"x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"}},
+		"required":   []string{"x", "y"},
+	}, "拖拽路径坐标")
+	browserPath["minItems"] = 1
+	browserOfficialCommand := map[string]any{
+		"type": "object", "additionalProperties": true,
+		"description": "官方 Browser Service handleRpc(execute) 命令对象；用于当前强类型动作未覆盖的官方 Playwright/AX/WebMCP/history/export/dialog 等能力。仍经过 Browser Service 的 origin/site-status/confirmation 等安全检查；不得设置 browser_id，list_browsers 请使用 status。",
+		"properties":  map[string]any{"type": stringSchema("官方 Browser Service execute command type")},
+		"required":    []string{"type"},
+	}
+	browserCommon := map[string]any{
+		"remote_session_id":   remoteSession,
+		"browser_instance_id": stringSchema("OpenAI 官方扩展实例 ID；多个浏览器实例并存时，除 status/tabs 外必须明确指定"),
+		"purpose":             stringSchema("浏览器操作的真实用户目标和预期副作用；status/tabs 可省略"),
+		"user_confirmed":      booleanSchema("仅在上一响应明确要求 Browser Service 权限确认且用户已确认后设为 true；服务端仍校验同一动作与官方权限提示"),
+	}
+	browserBranches := map[string]actionSchemaBranch{
+		"status":     {Description: "发现并验证本机 OpenAI 官方 ChatGPT/Codex 浏览器扩展连接。", Required: []string{"remote_session_id"}},
+		"tabs":       {Description: "读取官方扩展可见的当前用户浏览器标签页元数据；复用现有浏览器与登录态。", Required: []string{"remote_session_id"}},
+		"claim":      {Description: "把用户现有标签页纳入当前 Browser Service 会话；不改变页面内容。", Properties: map[string]any{"tab_id": browserTabID}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"agent_tabs": {Description: "列出当前 Browser Service 会话已创建或已 claim 的标签页。", Required: []string{"remote_session_id", "purpose"}},
+		"get_tab":    {Description: "读取会话内单个标签页当前 title/url。", Properties: map[string]any{"tab_id": browserTabID}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"create_tab": {Description: "通过官方扩展创建一个新的受控标签页。", Required: []string{"remote_session_id", "purpose"}},
+		"close_tab":  {Description: "关闭指定受控标签页。", Properties: map[string]any{"tab_id": browserTabID}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"navigate": {Description: "通过官方 Browser Service 导航到完整 http/https URL；保留其 URL、站点状态和 origin 权限检查。", Properties: map[string]any{
+			"tab_id": browserTabID, "url": stringSchema("完整 http:// 或 https:// URL"), "timeout_ms": browserTimeout,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id", "url"}},
+		"back":    {Description: "后退当前标签页历史记录。", Properties: map[string]any{"tab_id": browserTabID, "timeout_ms": browserTimeout}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"forward": {Description: "前进当前标签页历史记录。", Properties: map[string]any{"tab_id": browserTabID, "timeout_ms": browserTimeout}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"reload":  {Description: "重新加载当前标签页。", Properties: map[string]any{"tab_id": browserTabID, "timeout_ms": browserTimeout}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"snapshot": {Description: "读取官方 DOM-CUA 可见页面结构并返回稳定 node_id；后续 click/scroll 可直接使用 node_id。", Properties: map[string]any{
+			"tab_id": browserTabID, "timeout_ms": browserTimeout,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"click": {Description: "点击 DOM-CUA node_id；没有 node_id 时可使用页面坐标 x/y。", Properties: map[string]any{
+			"tab_id": browserTabID, "node_id": stringSchema("最近一次 snapshot 返回的 DOM-CUA node_id"), "x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"},
+			"button": map[string]any{"type": "integer", "enum": []int{1, 2, 3}, "description": "鼠标按钮：1 左键、2 中键、3 右键"}, "keys": browserKeys, "timeout_ms": browserTimeout,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"double_click": {Description: "双击 DOM-CUA node_id；没有 node_id 时可使用页面坐标 x/y。", Properties: map[string]any{
+			"tab_id": browserTabID, "node_id": stringSchema("最近一次 snapshot 返回的 DOM-CUA node_id"), "x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"}, "keys": browserKeys, "timeout_ms": browserTimeout,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"type": {Description: "向当前聚焦输入目标键入文本；由官方 Browser Service 处理剪贴板/富文本与输入防护。", Properties: map[string]any{
+			"tab_id": browserTabID, "text": stringSchema("要输入的文本"), "timeout_ms": browserTimeout,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id", "text"}},
+		"keypress": {Description: "向当前聚焦目标发送按键或组合键。", Properties: map[string]any{
+			"tab_id": browserTabID, "keys": browserKeys, "timeout_ms": browserTimeout,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id", "keys"}},
+		"scroll": {Description: "滚动指定 DOM 节点或页面中心；提供 x/y 时改为坐标滚动。", Properties: map[string]any{
+			"tab_id": browserTabID, "node_id": stringSchema("可选 DOM-CUA node_id"), "x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"},
+			"scroll_x": map[string]any{"type": "number", "description": "水平滚动量"}, "scroll_y": map[string]any{"type": "number", "description": "垂直滚动量"}, "keys": browserKeys,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id", "scroll_x", "scroll_y"}},
+		"move": {Description: "移动鼠标到页面坐标。", Properties: map[string]any{
+			"tab_id": browserTabID, "x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"}, "keys": browserKeys,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id", "x", "y"}},
+		"drag": {Description: "沿给定页面坐标路径拖拽。", Properties: map[string]any{
+			"tab_id": browserTabID, "path": browserPath, "keys": browserKeys,
+		}, Required: []string{"remote_session_id", "purpose", "tab_id", "path"}},
+		"screenshot": {Description: "通过官方 Browser Service 截取当前页面视口、整页或裁剪区域，返回 base64 图像数据。", Properties: map[string]any{
+			"tab_id": browserTabID, "full_page": booleanSchema("是否截取整页"),
+			"crop_x": map[string]any{"type": "number"}, "crop_y": map[string]any{"type": "number"}, "crop_width": map[string]any{"type": "number", "exclusiveMinimum": 0}, "crop_height": map[string]any{"type": "number", "exclusiveMinimum": 0},
+		}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
+		"official": {Description: "高级入口：把一个官方 Browser Service execute command 交给同一 Browser Service 安全策略层执行。仅在强类型动作无法表达官方能力时使用；不会直接调用 extension-host/raw CDP。", Properties: map[string]any{
+			"command": browserOfficialCommand,
+		}, Required: []string{"remote_session_id", "purpose", "command"}},
+	}
+	r.addTool(s, cleanActionTool("browser", toolDesc["browser"], browserCommon, browserBranches, browserToolAnnotation), r.toolBrowser)
+
 	r.addTool(s, supportTool("screenshot_capture", toolDesc["screenshot_capture"], map[string]any{
 		"remote_session_id": remoteSession, "purpose": stringSchema("截取屏幕的用户目标和范围"),
 		"mode": stringSchema("全屏或区域"), "display": numberSchema("显示器索引"),

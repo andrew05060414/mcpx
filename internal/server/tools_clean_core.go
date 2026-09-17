@@ -80,6 +80,33 @@ var mcpToolAnnotation = toolAnnotation{
 	}},
 }
 
+var browserToolAnnotation = toolAnnotation{
+	ReadOnly: false, Destructive: true, Idempotent: false, OpenWorld: true,
+	Meta: mcp.Meta{"mcpx/action_risk": map[string]any{
+		"status":       riskDescriptor(true, false, true, true, "local_browser_extension_status"),
+		"tabs":         riskDescriptor(true, false, true, true, "local_browser_tab_metadata_read"),
+		"claim":        riskDescriptor(false, false, true, true, "browser_session_tab_claim"),
+		"agent_tabs":   riskDescriptor(true, false, true, true, "browser_session_tab_read"),
+		"get_tab":      riskDescriptor(true, false, true, true, "browser_session_tab_read"),
+		"create_tab":   riskDescriptor(false, false, false, true, "browser_tab_create"),
+		"close_tab":    riskDescriptor(false, true, false, true, "browser_tab_close"),
+		"navigate":     riskDescriptor(false, true, false, true, "browser_navigation_open_world"),
+		"back":         riskDescriptor(false, false, false, true, "browser_navigation_history"),
+		"forward":      riskDescriptor(false, false, false, true, "browser_navigation_history"),
+		"reload":       riskDescriptor(false, false, false, true, "browser_navigation_reload"),
+		"snapshot":     riskDescriptor(true, false, true, true, "browser_page_dom_read"),
+		"click":        riskDescriptor(false, true, false, true, "browser_page_interaction"),
+		"double_click": riskDescriptor(false, true, false, true, "browser_page_interaction"),
+		"type":         riskDescriptor(false, true, false, true, "browser_page_input"),
+		"keypress":     riskDescriptor(false, true, false, true, "browser_page_input"),
+		"scroll":       riskDescriptor(false, false, false, true, "browser_page_view_change"),
+		"move":         riskDescriptor(false, false, false, true, "browser_pointer_move"),
+		"drag":         riskDescriptor(false, true, false, true, "browser_page_interaction"),
+		"screenshot":   riskDescriptor(true, false, true, true, "browser_page_screenshot_read"),
+		"official":     riskDescriptor(false, true, false, true, "browser_official_dynamic_command"),
+	}},
+}
+
 func riskDescriptor(readOnly, destructive, idempotent, openWorld bool, classification string) map[string]any {
 	return map[string]any{
 		"read_only": readOnly, "destructive": destructive, "idempotent": idempotent,

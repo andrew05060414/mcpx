@@ -20,7 +20,7 @@ func TestPublicCatalogIsExactlyTheCleanCoreContract(t *testing.T) {
 	want := []string{
 		"workspace", "session", "read", "edit", "move_out", "observe", "progress",
 		"operation_batch", "operation_manage",
-		"execute", "plan", "artifact", "skill_tool", "mcp_tool",
+		"execute", "plan", "artifact", "skill_tool", "mcp_tool", "browser",
 		"runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide",
 	}
 	got := make([]string, 0, len(runtime.listedToolMap()))

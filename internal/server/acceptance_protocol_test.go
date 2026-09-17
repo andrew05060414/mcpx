@@ -216,7 +216,7 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	expectedTools := []string{
 		"workspace", "session", "read", "edit", "move_out", "observe", "progress",
 		"operation_batch", "operation_manage",
-		"execute", "plan", "artifact", "skill_tool", "mcp_tool",
+		"execute", "plan", "artifact", "skill_tool", "mcp_tool", "browser",
 		"runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide",
 	}
 	if len(byName) != len(expectedTools) {

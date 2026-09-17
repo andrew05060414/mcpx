@@ -21,6 +21,7 @@ import (
 	"mcpx/internal/artifact"
 	"mcpx/internal/audit"
 	"mcpx/internal/auth"
+	"mcpx/internal/browseruse"
 	"mcpx/internal/config"
 	"mcpx/internal/deletion"
 	"mcpx/internal/envelope"
@@ -74,6 +75,7 @@ type Runtime struct {
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
 	screenshot      screenCapturer
+	browserService  *browseruse.Service
 	observation     *observationBridge
 	operations      *operation.Service
 	observerSocket  *observation.SocketServer
@@ -214,6 +216,7 @@ func New(opts Options) (*Runtime, error) {
 		deletions:      deletion.NewStore(stateStore.DB()),
 		retention:      retentionService,
 		screenshot:     screenshot.NewService(),
+		browserService: browseruse.NewService(),
 		toolIndex:      map[string]mcp.Tool{},
 		toolHandlers:   map[string]mcp.ToolHandler{},
 		toolMeta:       map[string]toolAnnotation{},
@@ -442,6 +445,11 @@ func (r *Runtime) Close() error {
 		}
 		if r.tasks != nil {
 			r.tasks.Close()
+		}
+		if r.browserService != nil {
+			if err := r.browserService.Close(); err != nil && r.closeErr == nil {
+				r.closeErr = err
+			}
 		}
 		if r.state != nil {
 			if err := r.state.Close(); r.closeErr == nil {
