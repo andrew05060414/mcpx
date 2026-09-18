@@ -236,16 +236,23 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		if err := json.Unmarshal(encoded, &listedTool); err != nil {
 			t.Fatalf("decode %s: %v", name, err)
 		}
-		outputSchema, ok := listedTool["outputSchema"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s must expose an OutputSchema: %+v", name, listedTool["outputSchema"])
-		}
+		rawOutputSchema, hasOutputSchema := listedTool["outputSchema"]
 		if name == "mcp_tool" {
-			if outputSchema["$id"] != "mcpx.mcp_tool_result.v1" || outputSchema["type"] != nil {
-				t.Fatalf("mcp_tool must allow transparent upstream structuredContent of any JSON shape: %+v", outputSchema)
+			outputSchema, ok := rawOutputSchema.(map[string]any)
+			if !hasOutputSchema || !ok || outputSchema["$id"] != "mcpx.mcp_tool_result.v1" {
+				t.Fatalf("mcp_tool must expose its permissive passthrough OutputSchema: %+v", rawOutputSchema)
 			}
-		} else if outputSchema["$id"] != "mcpx.structured_content.v2.0" {
-			t.Fatalf("%s must expose the ARC structuredContent OutputSchema: %+v", name, listedTool["outputSchema"])
+			if _, fixedType := outputSchema["type"]; fixedType {
+				t.Fatalf("mcp_tool passthrough OutputSchema must not constrain upstream structuredContent to one JSON type: %+v", rawOutputSchema)
+			}
+		} else {
+			outputSchema, ok := rawOutputSchema.(map[string]any)
+			if !ok {
+				t.Fatalf("%s must expose an OutputSchema: %+v", name, rawOutputSchema)
+			}
+			if outputSchema["$id"] != "mcpx.structured_content.v2.0" {
+				t.Fatalf("%s must expose the ARC structuredContent OutputSchema: %+v", name, rawOutputSchema)
+			}
 		}
 		inputSchema, err := json.Marshal(tool.InputSchema)
 		if err != nil {
@@ -604,7 +611,7 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	}
 	executeRun := call("execute", map[string]any{
 		"action": "run", "remote_session_id": remoteID, "purpose": "acceptance execute run",
-		"command": "printf acceptance-execute", "scope": "workspace",
+		"command": testPrintCommand("acceptance-execute"), "scope": "workspace",
 	})
 	if !statusOK(executeRun) {
 		t.Fatalf("execute run = %+v", executeRun)
@@ -770,14 +777,14 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 
 	// --- A08 command_execute / task_manage short and long command paths ---
 	short := call("command_execute", map[string]any{
-		"remote_session_id": remoteID, "command": "printf short-command", "purpose": "run the short command protocol check", "scope": "workspace",
+		"remote_session_id": remoteID, "command": testPrintCommand("short-command"), "purpose": "run the short command protocol check", "scope": "workspace",
 	})
 	shortData, _ := short["data"].(map[string]any)
 	if shortData["completed_in_call"] != true || shortData["exit_code"] != float64(0) || shortData["execution_task_id"] != nil {
 		t.Fatalf("short command should complete in one call: %+v", short)
 	}
 	long := call("command_execute", map[string]any{
-		"remote_session_id": remoteID, "command": "sleep 0.05", "purpose": "verify short wait task handoff", "scope": "workspace", "yield_time_ms": 1,
+		"remote_session_id": remoteID, "command": testSleepCommand(50 * time.Millisecond), "purpose": "verify short wait task handoff", "scope": "workspace", "yield_time_ms": 1,
 	})
 	longData, _ := long["data"].(map[string]any)
 	longTaskID, _ := longData["execution_task_id"].(string)
@@ -785,14 +792,14 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		t.Fatalf("long command should return a unified Task: %+v", long)
 	}
 	attached := call("task_manage", map[string]any{
-		"action": "attach", "remote_session_id": remoteID, "execution_task_id": longTaskID, "yield_time_ms": 1000,
+		"action": "attach", "remote_session_id": remoteID, "execution_task_id": longTaskID, "yield_time_ms": 3000,
 	})
 	attachedData, _ := attached["data"].(map[string]any)
 	if attachedData["status"] != "exited" || attachedData["exit_code"] != float64(0) || attachedData["stdout_next_offset"] == nil || attachedData["stderr_next_offset"] == nil {
 		t.Fatalf("task attach must return stream-specific offsets: %+v", attached)
 	}
 	overTen := call("command_execute", map[string]any{
-		"remote_session_id": remoteID, "command": "sleep 11", "purpose": "verify default long-task handoff", "scope": "workspace",
+		"remote_session_id": remoteID, "command": testSleepCommand(11 * time.Second), "purpose": "verify default long-task handoff", "scope": "workspace",
 	})
 	overTenData, _ := overTen["data"].(map[string]any)
 	overTenTaskID, _ := overTenData["execution_task_id"].(string)

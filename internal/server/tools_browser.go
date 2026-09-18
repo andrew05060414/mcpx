@@ -108,13 +108,30 @@ func (r *Runtime) toolBrowser(ctx context.Context, req *mcp.CallToolRequest) (*m
 	if r.browserService == nil {
 		r.browserService = browseruse.NewService()
 	}
-	serviceResponse, serviceErr := r.browserService.Execute(ctx, browseruse.ServiceRequest{
+	serviceRequest := browseruse.ServiceRequest{
 		SessionID:            browserServiceSessionID(session.ID),
 		TurnID:               browserServiceTurnID(session.ID),
 		BrowserInstanceID:    instanceID,
 		Command:              command,
 		ApprovedFingerprints: approvedFingerprints,
-	})
+	}
+	var beforeNavigation browserTabState
+	haveBeforeNavigation := false
+	if action == "navigate" {
+		beforeNavigation, haveBeforeNavigation = r.browserServiceTabState(ctx, serviceRequest, strings.TrimSpace(stringPayload(envReq.Payload, "tab_id")))
+	}
+	serviceResponse, serviceErr := r.browserService.Execute(ctx, serviceRequest)
+	if serviceErr == nil && browserActionErrorCode(serviceResponse.Error) == "browser_attachment_stale" {
+		// A debugger attachment belongs to the long-lived Browser Service/node_repl
+		// process. Once that attachment goes stale, retrying inside the same process
+		// cannot recover it. Recreate the sidecar once, then replay the command so a
+		// still-existing tab can be freshly attached (notably stale test tabs).
+		// Keep the Service pointer stable: Close/Execute are serialized by the
+		// Service mutex, while swapping this shared pointer would race concurrent
+		// browser calls.
+		_ = r.browserService.Close()
+		serviceResponse, serviceErr = r.browserService.Execute(ctx, serviceRequest)
+	}
 	if serviceErr != nil {
 		return r.terminalError(envReq, session.ID, session.WorkspaceName, "browser_service_failed", serviceErr.Error())
 	}
@@ -123,6 +140,17 @@ func (r *Runtime) toolBrowser(ctx context.Context, req *mcp.CallToolRequest) (*m
 	}
 	if len(serviceResponse.Elicitations) > 0 {
 		return r.browserConfirmationRequired(envReq, principal.ID, session.ID, session.WorkspaceName, instanceID, action, digest, serviceResponse.Elicitations[0])
+	}
+	if action == "navigate" && haveBeforeNavigation && browserNavigationTimedOut(serviceResponse.Error) {
+		afterNavigation, ok := r.browserServiceTabState(ctx, serviceRequest, strings.TrimSpace(stringPayload(envReq.Payload, "tab_id")))
+		if ok && browserNavigationAdvanced(beforeNavigation, afterNavigation) {
+			serviceResponse.Error = nil
+			serviceResponse.Result = map[string]any{
+				"recovered_from_timeout": true,
+				"requested_url":          strings.TrimSpace(stringPayload(envReq.Payload, "url")),
+				"final_url":              afterNavigation.URL,
+			}
+		}
 	}
 	if serviceResponse.Error != nil {
 		return r.terminalError(envReq, session.ID, session.WorkspaceName, browserActionErrorCode(serviceResponse.Error), serviceResponse.Error.Message)
@@ -184,6 +212,47 @@ func (r *Runtime) browserUserTabs(ctx context.Context, envReq envelope.Request, 
 	}, fmt.Sprintf("listed %d browser tab(s)", total)), nil
 }
 
+type browserTabState struct {
+	ID    string
+	Title string
+	URL   string
+}
+
+func (r *Runtime) browserServiceTabState(ctx context.Context, base browseruse.ServiceRequest, tabID string) (browserTabState, bool) {
+	if strings.TrimSpace(tabID) == "" || r.browserService == nil {
+		return browserTabState{}, false
+	}
+	probe := base
+	probe.Command = map[string]any{"type": "get_tab", "tab_id": tabID}
+	probe.ApprovedFingerprints = nil
+	response, err := r.browserService.Execute(ctx, probe)
+	if err != nil || response.Error != nil || len(response.Elicitations) > 0 {
+		return browserTabState{}, false
+	}
+	result, ok := response.Result.(map[string]any)
+	if !ok {
+		return browserTabState{}, false
+	}
+	state := browserTabState{
+		ID:    strings.TrimSpace(stringPayload(result, "id")),
+		Title: strings.TrimSpace(stringPayload(result, "title")),
+		URL:   strings.TrimSpace(stringPayload(result, "url")),
+	}
+	return state, state.ID != "" || state.URL != ""
+}
+
+func browserNavigationTimedOut(serviceError *browseruse.ServiceError) bool {
+	if serviceError == nil {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(serviceError.Message))
+	return strings.Contains(message, "timed out waiting for tab") && strings.Contains(message, "navigate")
+}
+
+func browserNavigationAdvanced(before, after browserTabState) bool {
+	return before.URL != "" && after.URL != "" && before.URL != after.URL
+}
+
 func browserActionErrorCode(serviceError *browseruse.ServiceError) string {
 	if serviceError == nil {
 		return "browser_action_failed"
@@ -198,6 +267,8 @@ func browserActionErrorCode(serviceError *browseruse.ServiceError) string {
 		return "browser_not_found"
 	case strings.Contains(message, "multiple extension browsers are available"):
 		return "browser_ambiguous"
+	case strings.Contains(message, "debugger unattached"), strings.Contains(message, "debugger is not attached"):
+		return "browser_attachment_stale"
 	default:
 		return "browser_action_failed"
 	}
@@ -212,31 +283,33 @@ func browserServiceCommand(action string, payload map[string]any) (map[string]an
 		}
 		return value, nil
 	}
-	withTab := func(commandType string) (map[string]any, error) {
+	withTab := func(commandType string, allowTimeout bool) (map[string]any, error) {
 		value, err := tabID()
 		if err != nil {
 			return nil, err
 		}
 		result := map[string]any{"type": commandType, "tab_id": value}
-		if timeout, ok := browserNumber(payload, "timeout_ms"); ok {
-			result["timeout_ms"] = timeout
+		if allowTimeout {
+			if timeout, ok := browserNumber(payload, "timeout_ms"); ok {
+				result["timeout_ms"] = timeout
+			}
 		}
 		return result, nil
 	}
 
 	switch action {
 	case "claim":
-		return withTab("browser_user_claim_tab")
+		return withTab("browser_user_claim_tab", false)
 	case "agent_tabs":
 		return map[string]any{"type": "list_tabs"}, nil
 	case "get_tab":
-		return withTab("get_tab")
+		return withTab("get_tab", false)
 	case "create_tab":
 		return map[string]any{"type": "create_tab"}, nil
 	case "close_tab":
-		return withTab("close_tab")
+		return withTab("close_tab", false)
 	case "navigate":
-		result, err := withTab("navigate_tab_url")
+		result, err := withTab("navigate_tab_url", true)
 		if err != nil {
 			return nil, err
 		}
@@ -247,13 +320,23 @@ func browserServiceCommand(action string, payload map[string]any) (map[string]an
 		result["url"] = url
 		return result, nil
 	case "back":
-		return withTab("navigate_tab_back")
+		result, err := withTab("navigate_tab_back", false)
+		if err != nil {
+			return nil, err
+		}
+		result["timeout_ms"] = float64(0)
+		return result, nil
 	case "forward":
-		return withTab("navigate_tab_forward")
+		result, err := withTab("navigate_tab_forward", false)
+		if err != nil {
+			return nil, err
+		}
+		result["timeout_ms"] = float64(0)
+		return result, nil
 	case "reload":
-		return withTab("navigate_tab_reload")
+		return withTab("navigate_tab_reload", true)
 	case "snapshot":
-		return withTab("dom_cua_get_visible_dom")
+		return withTab("dom_cua_get_visible_dom", false)
 	case "click", "double_click":
 		value, err := tabID()
 		if err != nil {
@@ -270,6 +353,9 @@ func browserServiceCommand(action string, payload map[string]any) (map[string]an
 				result["timeout_ms"] = timeout
 			}
 			return result, nil
+		}
+		if _, ok := browserNumber(payload, "timeout_ms"); ok {
+			return nil, fmt.Errorf("%s timeout_ms is only supported with node_id", action)
 		}
 		x, xOK := browserNumber(payload, "x")
 		y, yOK := browserNumber(payload, "y")
@@ -289,7 +375,7 @@ func browserServiceCommand(action string, payload map[string]any) (map[string]an
 		}
 		return result, nil
 	case "type":
-		result, err := withTab("dom_cua_type")
+		result, err := withTab("dom_cua_type", false)
 		if err != nil {
 			return nil, err
 		}
@@ -300,7 +386,7 @@ func browserServiceCommand(action string, payload map[string]any) (map[string]an
 		result["text"] = text
 		return result, nil
 	case "keypress":
-		result, err := withTab("dom_cua_keypress")
+		result, err := withTab("dom_cua_keypress", false)
 		if err != nil {
 			return nil, err
 		}
@@ -367,7 +453,7 @@ func browserServiceCommand(action string, payload map[string]any) (map[string]an
 		}
 		return result, nil
 	case "screenshot":
-		result, err := withTab("tab_screenshot")
+		result, err := withTab("tab_screenshot", false)
 		if err != nil {
 			return nil, err
 		}

@@ -19,8 +19,12 @@ func TestResolveEscape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(p, root) {
-		t.Fatal(p)
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !withinRoot(canonicalRoot, p) {
+		t.Fatalf("resolved path escaped root: root=%q path=%q", canonicalRoot, p)
 	}
 }
 

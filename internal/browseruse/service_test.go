@@ -222,6 +222,18 @@ for await (const line of lines) {
 	if one.ResponseMeta["codex/browserUse"] != true || len(one.ContentItems) != 1 {
 		t.Fatalf("Browser Service metadata/content items were not preserved: %+v", one)
 	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("reset service: %v", err)
+	}
+	restarted, err := service.Execute(ctx, ServiceRequest{SessionID: "session", TurnID: "turn", BrowserInstanceID: "instance-1", Command: map[string]any{"type": "counter"}})
+	if err != nil || restarted.Error != nil {
+		t.Fatalf("counter after reset = %+v err=%v", restarted, err)
+	}
+	restartedResult, _ := restarted.Result.(map[string]any)
+	if restartedResult["value"] != float64(1) {
+		t.Fatalf("service reset must start a fresh sidecar: %+v", restartedResult)
+	}
 	toolSurface, _ := one.ResponseMeta["codex/toolSurface"].(map[string]any)
 	screenshotMeta, _ := toolSurface["screenshot"].(map[string]any)
 	if screenshotMeta["url"] != nil || screenshotMeta["pageUrl"] != "https://example.com" || screenshotMeta["tabId"] != "7" {

@@ -88,6 +88,7 @@ func TestBrowserErrorsUseActionableTaxonomy(t *testing.T) {
 		hintContains string
 	}{
 		{code: "BROWSER_NODE_STALE", category: "conflict", retryable: true, hintContains: "browser snapshot"},
+		{code: "BROWSER_ATTACHMENT_STALE", category: "conflict", retryable: false, hintContains: "reconnect"},
 		{code: "BROWSER_TAB_NOT_FOUND", category: "not_found", retryable: false, hintContains: "browser tab list"},
 	} {
 		t.Run(test.code, func(t *testing.T) {

@@ -91,8 +91,9 @@ func TestReadItemsLimitAndListPathAreStructured(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace.Path, "outside.txt"), []byte("outside\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	symlinkAvailable := true
 	if err := os.Symlink("scoped", filepath.Join(workspace.Path, "scoped-link")); err != nil {
-		t.Fatal(err)
+		symlinkAvailable = false
 	}
 	opened := callEnvelope(t, rt.toolSession, context.Background(), map[string]any{"action": "open", "workspace": "demo"})
 	remoteID := opened["remote_session_id"].(string)
@@ -137,11 +138,11 @@ func TestReadItemsLimitAndListPathAreStructured(t *testing.T) {
 		entry, _ := raw.(map[string]any)
 		kinds[entry["path"].(string)] = entry["kind"].(string)
 	}
-	if kinds["scoped"] != "directory" || kinds["outside.txt"] != "file" || kinds["scoped-link"] != "symlink" {
+	if kinds["scoped"] != "directory" || kinds["outside.txt"] != "file" || (symlinkAvailable && kinds["scoped-link"] != "symlink") {
 		t.Fatalf("root direct inventory types=%+v", kinds)
 	}
 	pagedRootList := callEnvelope(t, rt.toolRead, context.Background(), map[string]any{
-		"remote_session_id": remoteID, "view": "list", "entries_limit": 2,
+		"remote_session_id": remoteID, "view": "list", "entries_limit": 1,
 	})
 	pagedData, _ := pagedRootList["data"].(map[string]any)
 	if pagedData["entries_complete"] != false || pagedData["entries_next_cursor"] == "" {

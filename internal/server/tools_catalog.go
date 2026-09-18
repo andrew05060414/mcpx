@@ -483,7 +483,7 @@ func (r *Runtime) registerConsolidatedToolsCatalog(s *mcp.Server) {
 	r.addTool(s, cleanActionTool("mcp_tool", toolDesc["mcp_tool"], mcpCommon, mcpBranches, mcpToolAnnotation), r.toolMCPTool)
 
 	browserTabID := stringSchema("Browser Service 返回的标签页 ID；用户现有标签页先用 tabs 获取，操作前通常先 claim")
-	browserTimeout := map[string]any{"type": "integer", "minimum": 0, "maximum": 60000, "description": "浏览器动作超时（毫秒）"}
+	browserTimeout := map[string]any{"type": "integer", "minimum": 0, "maximum": 60000, "description": "浏览器动作超时（毫秒）；click/double_click 仅 node_id 模式支持"}
 	browserKeys := arraySchema(stringSchema("按键名，如 Control、Shift、Enter、A"), "同时按下或发送的按键序列")
 	browserKeys["minItems"] = 1
 	browserPath := arraySchema(map[string]any{
@@ -519,20 +519,20 @@ func (r *Runtime) registerConsolidatedToolsCatalog(s *mcp.Server) {
 		"forward": {Description: "前进当前标签页历史记录。", Properties: map[string]any{"tab_id": browserTabID, "timeout_ms": browserTimeout}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
 		"reload":  {Description: "重新加载当前标签页。", Properties: map[string]any{"tab_id": browserTabID, "timeout_ms": browserTimeout}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
 		"snapshot": {Description: "读取官方 DOM-CUA 可见页面结构并返回稳定 node_id；后续 click/scroll 可直接使用 node_id。", Properties: map[string]any{
-			"tab_id": browserTabID, "timeout_ms": browserTimeout,
+			"tab_id": browserTabID,
 		}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
-		"click": {Description: "点击 DOM-CUA node_id；没有 node_id 时可使用页面坐标 x/y。", Properties: map[string]any{
+		"click": {Description: "点击 DOM-CUA node_id；没有 node_id 时可使用页面坐标 x/y。timeout_ms 仅 node_id 模式生效。", Properties: map[string]any{
 			"tab_id": browserTabID, "node_id": stringSchema("最近一次 snapshot 返回的 DOM-CUA node_id"), "x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"},
 			"button": map[string]any{"type": "integer", "enum": []int{1, 2, 3}, "description": "鼠标按钮：1 左键、2 中键、3 右键"}, "keys": browserKeys, "timeout_ms": browserTimeout,
 		}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
-		"double_click": {Description: "双击 DOM-CUA node_id；没有 node_id 时可使用页面坐标 x/y。", Properties: map[string]any{
+		"double_click": {Description: "双击 DOM-CUA node_id；没有 node_id 时可使用页面坐标 x/y。timeout_ms 仅 node_id 模式生效。", Properties: map[string]any{
 			"tab_id": browserTabID, "node_id": stringSchema("最近一次 snapshot 返回的 DOM-CUA node_id"), "x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"}, "keys": browserKeys, "timeout_ms": browserTimeout,
 		}, Required: []string{"remote_session_id", "purpose", "tab_id"}},
 		"type": {Description: "向当前聚焦输入目标键入文本；由官方 Browser Service 处理剪贴板/富文本与输入防护。", Properties: map[string]any{
-			"tab_id": browserTabID, "text": stringSchema("要输入的文本"), "timeout_ms": browserTimeout,
+			"tab_id": browserTabID, "text": stringSchema("要输入的文本"),
 		}, Required: []string{"remote_session_id", "purpose", "tab_id", "text"}},
 		"keypress": {Description: "向当前聚焦目标发送按键或组合键。", Properties: map[string]any{
-			"tab_id": browserTabID, "keys": browserKeys, "timeout_ms": browserTimeout,
+			"tab_id": browserTabID, "keys": browserKeys,
 		}, Required: []string{"remote_session_id", "purpose", "tab_id", "keys"}},
 		"scroll": {Description: "滚动指定 DOM 节点或页面中心；提供 x/y 时改为坐标滚动。", Properties: map[string]any{
 			"tab_id": browserTabID, "node_id": stringSchema("可选 DOM-CUA node_id"), "x": map[string]any{"type": "number"}, "y": map[string]any{"type": "number"},

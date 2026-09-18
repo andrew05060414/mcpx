@@ -452,7 +452,7 @@ func (r *Runtime) Close() error {
 			}
 		}
 		if r.state != nil {
-			if err := r.state.Close(); r.closeErr == nil {
+			if err := r.state.Close(); err != nil && r.closeErr == nil {
 				r.closeErr = err
 			}
 		}

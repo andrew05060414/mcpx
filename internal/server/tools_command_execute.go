@@ -20,6 +20,7 @@ import (
 	"mcpx/internal/envelope"
 	workspacefile "mcpx/internal/file"
 	"mcpx/internal/projecttask"
+	"mcpx/internal/pythonruntime"
 	"mcpx/internal/remotesession"
 	"mcpx/internal/security"
 	"mcpx/internal/sqlitequery"
@@ -540,7 +541,13 @@ func ephemeralRuntimeSpecFromPayload(payload map[string]any) (*ephemeralRuntimeS
 		if database != "" {
 			return nil, fmt.Errorf("database is supported only by sqlite runtime")
 		}
-		spec.Executable, spec.Args, spec.Command = "python3", []string{"-"}, "python3 -"
+		python, resolveErr := pythonruntime.Resolve()
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		spec.Executable = python.Executable
+		spec.Args = python.Args("-")
+		spec.Command = python.Command("-")
 	case "node":
 		if database != "" {
 			return nil, fmt.Errorf("database is supported only by sqlite runtime")

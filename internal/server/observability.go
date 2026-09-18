@@ -22,8 +22,8 @@ import (
 func (r *Runtime) addTool(s *mcp.Server, tool mcp.Tool, handler mcp.ToolHandler) {
 	tool = withEmbeddedActivitySchema(tool)
 	// OutputSchema describes structuredContent, not the larger ARC metadata
-	// envelope. The shared ARC contract stays identical across tools while
-	// hard limits are attached from the same source used by runtime capabilities.
+	// envelope. mcp_tool uses a permissive schema because its call action
+	// forwards arbitrary upstream structuredContent unchanged.
 	tool.OutputSchema = outputSchemaForTool(tool.Name)
 	instrumented := r.instrumentTool(tool.Name, handler)
 	if r.toolHandlers == nil {

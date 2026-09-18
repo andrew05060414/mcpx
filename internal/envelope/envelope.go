@@ -308,6 +308,8 @@ func classifyError(status Status, code string) (category string, retryable bool,
 		return "execution", false, "Inspect the failed operation step and its result before deciding whether to retry."
 	case "BROWSER_NODE_STALE":
 		return "conflict", true, "Refresh the browser snapshot and retry with a current DOM node id."
+	case "BROWSER_ATTACHMENT_STALE":
+		return "conflict", false, "Refresh the browser tab list; this tab's debugger attachment is stale. Reopen or create a controlled tab, or reconnect the browser extension, before retrying."
 	case "BROWSER_TAB_NOT_FOUND":
 		return "not_found", false, "Refresh the browser tab list and retry with a current tab_id."
 	}

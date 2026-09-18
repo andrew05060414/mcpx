@@ -21,12 +21,32 @@ func TestBrowserServiceCommandMapsCommonActions(t *testing.T) {
 		want    map[string]any
 	}{
 		{
-			name:   "dom click",
+			name:   "dom click preserves supported timeout",
 			action: "click",
 			payload: map[string]any{
 				"tab_id": "7", "node_id": "42", "timeout_ms": 1500,
 			},
 			want: map[string]any{"type": "dom_cua_click", "tab_id": "7", "node_id": "42", "timeout_ms": float64(1500)},
+		},
+		{
+			name:   "navigate preserves supported timeout",
+			action: "navigate",
+			payload: map[string]any{
+				"tab_id": "7", "url": "https://example.com", "timeout_ms": 2500,
+			},
+			want: map[string]any{"type": "navigate_tab_url", "tab_id": "7", "url": "https://example.com", "timeout_ms": float64(2500)},
+		},
+		{
+			name:    "back forces nonblocking upstream navigation",
+			action:  "back",
+			payload: map[string]any{"tab_id": "7", "timeout_ms": 15000},
+			want:    map[string]any{"type": "navigate_tab_back", "tab_id": "7", "timeout_ms": float64(0)},
+		},
+		{
+			name:    "forward forces nonblocking upstream navigation",
+			action:  "forward",
+			payload: map[string]any{"tab_id": "7"},
+			want:    map[string]any{"type": "navigate_tab_forward", "tab_id": "7", "timeout_ms": float64(0)},
 		},
 		{
 			name:   "coordinate click",
@@ -75,12 +95,12 @@ func TestBrowserServiceCommandMapsCommonActions(t *testing.T) {
 			},
 		},
 		{
-			name:   "official advanced command",
+			name:   "official advanced command preserves supported timeout",
 			action: "official",
 			payload: map[string]any{
-				"command": map[string]any{"type": "webmcp_list_tools", "tab_id": "7"},
+				"command": map[string]any{"type": "playwright_wait_for_load_state", "tab_id": "7", "timeout_ms": 1500},
 			},
-			want: map[string]any{"type": "webmcp_list_tools", "tab_id": "7"},
+			want: map[string]any{"type": "playwright_wait_for_load_state", "tab_id": "7", "timeout_ms": 1500},
 		},
 	}
 
@@ -104,6 +124,7 @@ func TestBrowserServiceCommandRejectsInvalidMixedArguments(t *testing.T) {
 		payload map[string]any
 	}{
 		{name: "click missing y", action: "click", payload: map[string]any{"tab_id": "1", "x": 1}},
+		{name: "coordinate click timeout unsupported", action: "click", payload: map[string]any{"tab_id": "1", "x": 1, "y": 2, "timeout_ms": 100}},
 		{name: "scroll missing y", action: "scroll", payload: map[string]any{"tab_id": "1", "x": 1, "scroll_x": 0, "scroll_y": 1}},
 		{name: "invalid optional keys", action: "move", payload: map[string]any{"tab_id": "1", "x": 1, "y": 2, "keys": "Shift"}},
 		{name: "partial crop", action: "screenshot", payload: map[string]any{"tab_id": "1", "crop_x": 1}},
@@ -157,6 +178,9 @@ func TestBrowserPublicSchemaAndRiskMetadata(t *testing.T) {
 			t.Fatalf("browser schema missing %q", field)
 		}
 	}
+	if properties["timeout_ms"] == nil {
+		t.Fatal("browser schema must expose timeout_ms for strong-typed actions whose official handlers support it")
+	}
 	actionSchema, _ := properties["action"].(map[string]any)
 	actions, _ := actionSchema["enum"].([]any)
 	for _, action := range []string{"status", "tabs", "claim", "agent_tabs", "get_tab", "create_tab", "close_tab", "navigate", "back", "forward", "reload", "snapshot", "click", "double_click", "type", "keypress", "scroll", "move", "drag", "screenshot", "official"} {
@@ -191,6 +215,27 @@ func TestBrowserCommandDigestBindsBrowserAndCommand(t *testing.T) {
 	}
 }
 
+func TestBrowserNavigationTimeoutRecoveryRequiresObservedURLChange(t *testing.T) {
+	timeout := &browseruse.ServiceError{Message: "Error: Timed out waiting for tab 7 to navigate to https://www.bing.com/."}
+	if !browserNavigationTimedOut(timeout) {
+		t.Fatal("expected navigation timeout to be recognized")
+	}
+	if browserNavigationTimedOut(&browseruse.ServiceError{Message: "unexpected browser service failure"}) {
+		t.Fatal("unrelated error must not be treated as navigation timeout")
+	}
+	before := browserTabState{ID: "7", URL: "https://example.com/"}
+	redirected := browserTabState{ID: "7", URL: "https://cn.bing.com/"}
+	if !browserNavigationAdvanced(before, redirected) {
+		t.Fatal("changed URL must allow timeout recovery")
+	}
+	if browserNavigationAdvanced(before, before) {
+		t.Fatal("unchanged URL must not allow timeout recovery")
+	}
+	if browserNavigationAdvanced(browserTabState{}, redirected) {
+		t.Fatal("missing pre-navigation URL must fail closed")
+	}
+}
+
 func TestBrowserActionErrorCodeClassifiesExpectedStateErrors(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -201,6 +246,7 @@ func TestBrowserActionErrorCodeClassifiesExpectedStateErrors(t *testing.T) {
 		{name: "missing tab", message: "Error: Tab not found: 999999999. Existing tabs: 7|Example|https://example.com", want: "browser_tab_not_found"},
 		{name: "missing browser instance", message: "Browser extension instance is not available: instance-x", want: "browser_not_found"},
 		{name: "ambiguous browser", message: "Multiple extension browsers are available; browser_instance_id is required", want: "browser_ambiguous"},
+		{name: "stale debugger attachment", message: "Error: Debugger unattached", want: "browser_attachment_stale"},
 		{name: "unknown upstream failure", message: "unexpected browser service failure", want: "browser_action_failed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
