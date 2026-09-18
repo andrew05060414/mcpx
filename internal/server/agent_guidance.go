@@ -184,7 +184,9 @@ func normalizePublicAction(tool string, arguments map[string]any) (string, map[s
 func isCleanPublicTool(tool string) bool {
 	switch tool {
 	case "session", "read", "edit", "move_out", "observe", "progress", "execute", "plan", "artifact", "skill_tool", "mcp_tool",
-		"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide":
+		"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide",
+		"ai_usage_get_status", "multica_list_executions", "multica_get_execution", "multica_list_agents",
+		"multica_assign_execution", "multica_retry_execution", "multica_request_review", "multica_update_status", "github_comment":
 		return true
 	default:
 		return false
