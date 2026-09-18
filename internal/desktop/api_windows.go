@@ -238,21 +238,21 @@ func (a *api) handleBrowserStatus(w http.ResponseWriter, r *http.Request) {
 	installations := make([]map[string]any, 0, len(discovery.Installations))
 	for _, installation := range discovery.Installations {
 		installations = append(installations, map[string]any{
-			"family": installation.Family,
-			"profile": installation.Profile,
+			"family":       installation.Family,
+			"profile":      installation.Profile,
 			"extension_id": installation.ExtensionID,
-			"name": installation.Name,
-			"version": installation.Version,
+			"name":         installation.Name,
+			"version":      installation.Version,
 		})
 	}
 	browsers := make([]map[string]any, 0, len(discovery.Backends))
 	for _, backend := range discovery.Backends {
 		browsers = append(browsers, map[string]any{
-			"family": backend.Info.Family,
-			"name": backend.Info.Name,
-			"version": backend.Info.Version,
+			"family":       backend.Info.Family,
+			"name":         backend.Info.Name,
+			"version":      backend.Info.Version,
 			"extension_id": backend.Info.Metadata.ExtensionID,
-			"instance_id": backend.Info.Metadata.ExtensionInstanceID,
+			"instance_id":  backend.Info.Metadata.ExtensionInstanceID,
 		})
 	}
 	state := discovery.State()
@@ -263,16 +263,16 @@ func (a *api) handleBrowserStatus(w http.ResponseWriter, r *http.Request) {
 		message = fmt.Sprintf("ChatGPT 官方浏览器扩展已连接（%d 个浏览器实例）。", len(discovery.Backends))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"state": state,
-		"installed": len(discovery.Installations) > 0,
-		"connected": len(discovery.Backends) > 0,
+		"state":              state,
+		"installed":          len(discovery.Installations) > 0,
+		"connected":          len(discovery.Backends) > 0,
 		"installation_count": len(installations),
-		"browser_count": len(browsers),
-		"pipe_count": discovery.PipeCount,
-		"installations": installations,
-		"browsers": browsers,
-		"help_url": browseruse.OfficialBrowserHelpURL,
-		"message": message,
+		"browser_count":      len(browsers),
+		"pipe_count":         discovery.PipeCount,
+		"installations":      installations,
+		"browsers":           browsers,
+		"help_url":           browseruse.OfficialBrowserHelpURL,
+		"message":            message,
 	})
 }
 
