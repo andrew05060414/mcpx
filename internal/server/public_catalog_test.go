@@ -22,6 +22,10 @@ func TestPublicCatalogIsExactlyTheCleanCoreContract(t *testing.T) {
 		"operation_batch", "operation_manage",
 		"execute", "plan", "artifact", "skill_tool", "mcp_tool",
 		"runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide",
+		"ai_usage_get_status",
+		"multica_list_executions", "multica_get_execution", "multica_list_agents",
+		"multica_assign_execution", "multica_retry_execution", "multica_request_review",
+		"multica_update_status", "github_comment",
 	}
 	got := make([]string, 0, len(runtime.listedToolMap()))
 	for name := range runtime.listedToolMap() {
