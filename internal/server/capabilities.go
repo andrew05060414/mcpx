@@ -53,6 +53,12 @@ func capabilityGroups() map[string][]string {
 	return map[string][]string{
 		"core":    {"workspace", "session", "read", "edit", "move_out", "observe", "progress", "execute", "plan", "artifact", "skill_tool", "mcp_tool"},
 		"support": {"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide"},
+		"control": {
+			"ai_usage_get_status",
+			"multica_list_executions", "multica_get_execution", "multica_list_agents",
+			"multica_assign_execution", "multica_retry_execution", "multica_request_review",
+			"multica_update_status", "github_comment",
+		},
 	}
 }
 
@@ -89,6 +95,15 @@ var toolCapabilityDefinitions = []toolCapabilityDefinition{
 	{Name: "environment", Domain: "environment", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "screenshot_capture", Domain: "screenshot", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "secret_provide", Domain: "secrets", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
+	{Name: "ai_usage_get_status", Domain: "ai_usage"},
+	{Name: "multica_list_executions", Domain: "multica"},
+	{Name: "multica_get_execution", Domain: "multica"},
+	{Name: "multica_list_agents", Domain: "multica"},
+	{Name: "multica_assign_execution", Domain: "multica", Roles: []string{"owner", "editor"}},
+	{Name: "multica_retry_execution", Domain: "multica", Roles: []string{"owner", "editor"}},
+	{Name: "multica_request_review", Domain: "multica", Roles: []string{"owner", "editor"}},
+	{Name: "multica_update_status", Domain: "multica", Roles: []string{"owner", "editor"}},
+	{Name: "github_comment", Domain: "github", Roles: []string{"owner", "editor"}},
 }
 
 func toolSupportsEmbeddedActivity(name string) bool {
