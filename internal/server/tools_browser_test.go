@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -37,16 +38,22 @@ func TestBrowserServiceCommandMapsCommonActions(t *testing.T) {
 			want: map[string]any{"type": "navigate_tab_url", "tab_id": "7", "url": "https://example.com", "timeout_ms": float64(2500)},
 		},
 		{
-			name:    "back forces nonblocking upstream navigation",
+			name:    "back preserves explicit upstream timeout",
 			action:  "back",
 			payload: map[string]any{"tab_id": "7", "timeout_ms": 15000},
-			want:    map[string]any{"type": "navigate_tab_back", "tab_id": "7", "timeout_ms": float64(0)},
+			want:    map[string]any{"type": "navigate_tab_back", "tab_id": "7", "timeout_ms": float64(15000)},
 		},
 		{
-			name:    "forward forces nonblocking upstream navigation",
+			name:    "back defaults to minimal positive upstream timeout",
+			action:  "back",
+			payload: map[string]any{"tab_id": "7"},
+			want:    map[string]any{"type": "navigate_tab_back", "tab_id": "7", "timeout_ms": float64(1)},
+		},
+		{
+			name:    "forward defaults to minimal positive upstream timeout",
 			action:  "forward",
 			payload: map[string]any{"tab_id": "7"},
-			want:    map[string]any{"type": "navigate_tab_forward", "tab_id": "7", "timeout_ms": float64(0)},
+			want:    map[string]any{"type": "navigate_tab_forward", "tab_id": "7", "timeout_ms": float64(1)},
 		},
 		{
 			name:   "coordinate click",
@@ -220,6 +227,10 @@ func TestBrowserNavigationTimeoutRecoveryRequiresObservedURLChange(t *testing.T)
 	if !browserNavigationTimedOut(timeout) {
 		t.Fatal("expected navigation timeout to be recognized")
 	}
+	cdpTimeout := &browseruse.ServiceError{Message: "Error: Timed out after 10000ms waiting for CDP command Page.navigate."}
+	if !browserNavigationTimedOut(cdpTimeout) {
+		t.Fatal("expected Page.navigate CDP timeout to be recognized")
+	}
 	if browserNavigationTimedOut(&browseruse.ServiceError{Message: "unexpected browser service failure"}) {
 		t.Fatal("unrelated error must not be treated as navigation timeout")
 	}
@@ -233,6 +244,50 @@ func TestBrowserNavigationTimeoutRecoveryRequiresObservedURLChange(t *testing.T)
 	}
 	if browserNavigationAdvanced(browserTabState{}, redirected) {
 		t.Fatal("missing pre-navigation URL must fail closed")
+	}
+}
+
+func TestBrowserClickNavigationRecoveryRequiresNodeClickAndURLChange(t *testing.T) {
+	payload := map[string]any{"tab_id": "7", "node_id": "42"}
+	stale := &browseruse.ServiceError{Message: "Error: DOM node 42 is stale or missing"}
+	if !browserActionMayNavigate("click", payload) || !browserClickNavigationStale("click", payload, stale) {
+		t.Fatal("DOM click stale error should be eligible for navigation recovery")
+	}
+	if browserActionMayNavigate("click", map[string]any{"tab_id": "7", "x": 10, "y": 20}) {
+		t.Fatal("coordinate click must not enable node-stale navigation recovery")
+	}
+	if browserClickNavigationStale("click", payload, &browseruse.ServiceError{Message: "other failure"}) {
+		t.Fatal("unrelated click error must not be recovered")
+	}
+	before := browserTabState{ID: "7", URL: "https://example.com/"}
+	after := browserTabState{ID: "7", URL: "https://www.iana.org/help/example-domains"}
+	if !browserNavigationAdvanced(before, after) {
+		t.Fatal("changed URL must allow click stale recovery")
+	}
+	if browserNavigationAdvanced(before, before) {
+		t.Fatal("unchanged URL must keep stale click failure")
+	}
+}
+
+func TestBrowserCompactScreenshotMovesBase64ToImageContent(t *testing.T) {
+	raw := []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01}
+	encoded := base64.StdEncoding.EncodeToString(raw)
+	result, meta, content := browserCompactScreenshot(
+		map[string]any{"data": encoded, "width": 10, "height": 20},
+		map[string]any{"codex/toolSurface": map[string]any{"screenshot": map[string]any{"pageUrl": "https://example.com", "tabId": "7", "url": "data:image/jpeg;base64," + encoded}}},
+	)
+	resultMap := result.(map[string]any)
+	if resultMap["data"] != nil || resultMap["image_content"] != true || resultMap["mime_type"] != "image/jpeg" || resultMap["bytes"] != len(raw) {
+		t.Fatalf("compact screenshot result = %+v", resultMap)
+	}
+	image, ok := content.(*mcp.ImageContent)
+	if !ok || !reflect.DeepEqual(image.Data, raw) || image.MIMEType != "image/jpeg" {
+		t.Fatalf("image content = %#v", content)
+	}
+	surface := meta["codex/toolSurface"].(map[string]any)
+	screenshot := surface["screenshot"].(map[string]any)
+	if screenshot["url"] != nil || screenshot["pageUrl"] != "https://example.com" || screenshot["tabId"] != "7" {
+		t.Fatalf("compact screenshot meta = %+v", meta)
 	}
 }
 

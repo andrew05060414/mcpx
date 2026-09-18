@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -13,6 +15,7 @@ import (
 	"mcpx/internal/approval"
 	"mcpx/internal/browseruse"
 	"mcpx/internal/envelope"
+	"mcpx/internal/mcpresult"
 	"mcpx/internal/remotesession"
 )
 
@@ -117,7 +120,7 @@ func (r *Runtime) toolBrowser(ctx context.Context, req *mcp.CallToolRequest) (*m
 	}
 	var beforeNavigation browserTabState
 	haveBeforeNavigation := false
-	if action == "navigate" {
+	if browserActionMayNavigate(action, envReq.Payload) {
 		beforeNavigation, haveBeforeNavigation = r.browserServiceTabState(ctx, serviceRequest, strings.TrimSpace(stringPayload(envReq.Payload, "tab_id")))
 	}
 	serviceResponse, serviceErr := r.browserService.Execute(ctx, serviceRequest)
@@ -141,19 +144,35 @@ func (r *Runtime) toolBrowser(ctx context.Context, req *mcp.CallToolRequest) (*m
 	if len(serviceResponse.Elicitations) > 0 {
 		return r.browserConfirmationRequired(envReq, principal.ID, session.ID, session.WorkspaceName, instanceID, action, digest, serviceResponse.Elicitations[0])
 	}
-	if action == "navigate" && haveBeforeNavigation && browserNavigationTimedOut(serviceResponse.Error) {
-		afterNavigation, ok := r.browserServiceTabState(ctx, serviceRequest, strings.TrimSpace(stringPayload(envReq.Payload, "tab_id")))
-		if ok && browserNavigationAdvanced(beforeNavigation, afterNavigation) {
-			serviceResponse.Error = nil
-			serviceResponse.Result = map[string]any{
-				"recovered_from_timeout": true,
-				"requested_url":          strings.TrimSpace(stringPayload(envReq.Payload, "url")),
-				"final_url":              afterNavigation.URL,
+	if haveBeforeNavigation {
+		switch {
+		case action == "navigate" && browserNavigationTimedOut(serviceResponse.Error):
+			afterNavigation, ok := r.browserServiceTabState(ctx, serviceRequest, strings.TrimSpace(stringPayload(envReq.Payload, "tab_id")))
+			if ok && browserNavigationAdvanced(beforeNavigation, afterNavigation) {
+				serviceResponse.Error = nil
+				serviceResponse.Result = map[string]any{
+					"recovered_from_timeout": true,
+					"requested_url":          strings.TrimSpace(stringPayload(envReq.Payload, "url")),
+					"final_url":              afterNavigation.URL,
+				}
+			}
+		case browserClickNavigationStale(action, envReq.Payload, serviceResponse.Error):
+			afterNavigation, ok := r.browserServiceTabState(ctx, serviceRequest, strings.TrimSpace(stringPayload(envReq.Payload, "tab_id")))
+			if ok && browserNavigationAdvanced(beforeNavigation, afterNavigation) {
+				serviceResponse.Error = nil
+				serviceResponse.Result = map[string]any{
+					"recovered_from_node_stale": true,
+					"final_url":                 afterNavigation.URL,
+				}
 			}
 		}
 	}
 	if serviceResponse.Error != nil {
 		return r.terminalError(envReq, session.ID, session.WorkspaceName, browserActionErrorCode(serviceResponse.Error), serviceResponse.Error.Message)
+	}
+	var imageContent mcp.Content
+	if action == "screenshot" {
+		serviceResponse.Result, serviceResponse.ResponseMeta, imageContent = browserCompactScreenshot(serviceResponse.Result, serviceResponse.ResponseMeta)
 	}
 	data := map[string]any{
 		"provider": "openai_official_browser_service",
@@ -167,7 +186,11 @@ func (r *Runtime) toolBrowser(ctx context.Context, req *mcp.CallToolRequest) (*m
 	if len(serviceResponse.ResponseMeta) > 0 {
 		data["response_meta"] = serviceResponse.ResponseMeta
 	}
-	return compactToolResult(data, "browser action completed: "+action), nil
+	result := compactToolResult(data, "browser action completed: "+action)
+	if imageContent != nil {
+		result.Content = append(result.Content, imageContent)
+	}
+	return result, nil
 }
 
 func (r *Runtime) browserUserTabs(ctx context.Context, envReq envelope.Request, remoteID, workspace string, backends []browseruse.Backend) (*mcp.CallToolResult, error) {
@@ -241,16 +264,97 @@ func (r *Runtime) browserServiceTabState(ctx context.Context, base browseruse.Se
 	return state, state.ID != "" || state.URL != ""
 }
 
+func browserActionMayNavigate(action string, payload map[string]any) bool {
+	if action == "navigate" {
+		return true
+	}
+	if action != "click" && action != "double_click" {
+		return false
+	}
+	return strings.TrimSpace(stringPayload(payload, "node_id")) != ""
+}
+
+func browserClickNavigationStale(action string, payload map[string]any, serviceError *browseruse.ServiceError) bool {
+	return browserActionMayNavigate(action, payload) && action != "navigate" && browserActionErrorCode(serviceError) == "browser_node_stale"
+}
+
 func browserNavigationTimedOut(serviceError *browseruse.ServiceError) bool {
 	if serviceError == nil {
 		return false
 	}
 	message := strings.ToLower(strings.TrimSpace(serviceError.Message))
-	return strings.Contains(message, "timed out waiting for tab") && strings.Contains(message, "navigate")
+	if strings.Contains(message, "timed out waiting for tab") && strings.Contains(message, "navigate") {
+		return true
+	}
+	return strings.Contains(message, "timed out") && strings.Contains(message, "waiting for cdp command") && strings.Contains(message, "page.navigate")
 }
 
 func browserNavigationAdvanced(before, after browserTabState) bool {
 	return before.URL != "" && after.URL != "" && before.URL != after.URL
+}
+
+func browserCompactScreenshot(result any, responseMeta map[string]any) (any, map[string]any, mcp.Content) {
+	resultMap, ok := result.(map[string]any)
+	if !ok {
+		return result, browserCompactScreenshotMeta(responseMeta), nil
+	}
+	encoded := strings.TrimSpace(stringPayload(resultMap, "data"))
+	if encoded == "" {
+		return result, browserCompactScreenshotMeta(responseMeta), nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return result, browserCompactScreenshotMeta(responseMeta), nil
+	}
+	mimeType := http.DetectContentType(raw)
+	if !strings.HasPrefix(mimeType, "image/") {
+		return result, browserCompactScreenshotMeta(responseMeta), nil
+	}
+	sum := sha256.Sum256(raw)
+	compact := make(map[string]any, len(resultMap)+3)
+	for key, value := range resultMap {
+		if key != "data" {
+			compact[key] = value
+		}
+	}
+	compact["image_content"] = true
+	compact["mime_type"] = mimeType
+	compact["bytes"] = len(raw)
+	compact["sha256"] = "sha256:" + hex.EncodeToString(sum[:])
+	return compact, browserCompactScreenshotMeta(responseMeta), mcpresult.NewImage(raw, mimeType)
+}
+
+func browserCompactScreenshotMeta(responseMeta map[string]any) map[string]any {
+	if len(responseMeta) == 0 {
+		return responseMeta
+	}
+	meta := make(map[string]any, len(responseMeta))
+	for key, value := range responseMeta {
+		meta[key] = value
+	}
+	surface, ok := responseMeta["codex/toolSurface"].(map[string]any)
+	if !ok {
+		return meta
+	}
+	compactSurface := make(map[string]any, len(surface))
+	for key, value := range surface {
+		compactSurface[key] = value
+	}
+	screenshot, ok := surface["screenshot"].(map[string]any)
+	if ok {
+		compactScreenshot := make(map[string]any, len(screenshot))
+		for key, value := range screenshot {
+			if key == "url" {
+				if rawURL, _ := value.(string); strings.HasPrefix(rawURL, "data:image/") {
+					continue
+				}
+			}
+			compactScreenshot[key] = value
+		}
+		compactSurface["screenshot"] = compactScreenshot
+	}
+	meta["codex/toolSurface"] = compactSurface
+	return meta
 }
 
 func browserActionErrorCode(serviceError *browseruse.ServiceError) string {
@@ -320,18 +424,22 @@ func browserServiceCommand(action string, payload map[string]any) (map[string]an
 		result["url"] = url
 		return result, nil
 	case "back":
-		result, err := withTab("navigate_tab_back", false)
+		result, err := withTab("navigate_tab_back", true)
 		if err != nil {
 			return nil, err
 		}
-		result["timeout_ms"] = float64(0)
+		if _, ok := result["timeout_ms"]; !ok {
+			result["timeout_ms"] = float64(1)
+		}
 		return result, nil
 	case "forward":
-		result, err := withTab("navigate_tab_forward", false)
+		result, err := withTab("navigate_tab_forward", true)
 		if err != nil {
 			return nil, err
 		}
-		result["timeout_ms"] = float64(0)
+		if _, ok := result["timeout_ms"]; !ok {
+			result["timeout_ms"] = float64(1)
+		}
 		return result, nil
 	case "reload":
 		return withTab("navigate_tab_reload", true)
