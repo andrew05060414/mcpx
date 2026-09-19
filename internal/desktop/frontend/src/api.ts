@@ -67,6 +67,7 @@ export interface CloudflareConfig {
   last_public_url: string
   manage_with_mcpx: boolean
   sync_oauth_server_url: boolean
+  auto_recover: boolean
 }
 
 export interface CloudflareSoftwareStatus {

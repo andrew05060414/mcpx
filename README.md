@@ -759,6 +759,7 @@ Windows 上可以用托盘常驻管理服务：
 - 公网启动前会拒绝 `auth.mode: open`，并自动打开 MCPX 反向代理所需的 Host / proxy header 设置。
 - 开启「公网 Origin 自动联动 OAuth server_url」后，Named Tunnel 会在启动前同步 `auth.oauth.server_url`；Quick Tunnel 会在取得临时公网地址后同步，并按需重启 MCPX 使 OAuth metadata 立即使用新 Origin。
 - 「健康检查」同时检查 cloudflared、MCPX 本地端点、Tunnel 进程、公网 `/mcp` 和 OAuth metadata；cloudflared 输出单独写入 `~/.mcpx/logs/cloudflared.log`。
+- 可开启「自动健康检查并故障恢复」：Desktop 每 30 秒检查一次，连续 2 次出现本地 MCP、Tunnel、公网 MCP 或 5xx/网络类 OAuth metadata 异常时，会自动重启本地 MCPX 与 Cloudflare Tunnel，并设置 2 分钟冷却避免重启风暴；手动停止 Tunnel 会解除自动恢复，重新启动后再次生效。
 - 系统托盘的 **Cloudflare Tunnel** 子菜单会实时显示 Tunnel 状态和公网 MCP URL，并可直接启动 / 停止、运行健康检查、复制公网 MCP URL；健康检查结果会缓存显示为「正常 / 异常」，Tunnel 状态变化后自动失效。
 
 Quick Tunnel 适合临时开发和连通性验证；Cloudflare 官方说明 Quick Tunnel 不支持 SSE，因此需要稳定 URL、OAuth issuer

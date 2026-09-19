@@ -66,6 +66,8 @@ func (a *api) handlePutCloudflareConfig(w http.ResponseWriter, r *http.Request) 
 	if body.LastPublicURL == "" {
 		body.LastPublicURL = old.LastPublicURL
 	}
+	// DesiredRunning 是后台运行意图，不暴露给前端表单，保存 UI 配置时必须保留。
+	body.DesiredRunning = old.DesiredRunning
 	saved, err := saveCloudflareDesktopConfig(body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
