@@ -155,8 +155,15 @@ func TestCleanCoreEditAppliesIdempotentlyAndReportsStale(t *testing.T) {
 	if data["total_changed_lines"] != float64(4) && data["total_changed_lines"] != 4 {
 		t.Fatalf("edit changed lines=%v", data["total_changed_lines"])
 	}
-	if diff, _ := data["diff_summary"].(string); !strings.Contains(diff, "+title: new") {
-		t.Fatalf("diff summary=%q", diff)
+	if data["diff_summary"] != nil {
+		t.Fatalf("edit response must not expose duplicate diff_summary: %+v", data)
+	}
+	results, _ := data["results"].([]any)
+	if len(results) != 1 {
+		t.Fatalf("edit results=%+v", data["results"])
+	}
+	if diff, _ := results[0].(map[string]any)["diff"].(string); !strings.Contains(diff, "+title: new") {
+		t.Fatalf("per-file diff=%q", diff)
 	}
 	content, _ := os.ReadFile(path)
 	if string(content) != "title: new\ncolor: blue\n" {
@@ -245,7 +252,11 @@ func TestCleanCoreEditUsesContextualDiffForSmallChangeInLargeFile(t *testing.T) 
 		t.Fatalf("dry-run edit failed: %+v", response)
 	}
 	data := response["data"].(map[string]any)
-	preview, _ := data["diff_summary"].(string)
+	if data["diff_summary"] != nil {
+		t.Fatalf("small edit must not duplicate diff_summary: %+v", data)
+	}
+	results, _ := data["results"].([]any)
+	preview, _ := results[0].(map[string]any)["diff"].(string)
 	if data["diff_truncated"] == true || len(preview) > 1024 {
 		t.Fatalf("small edit should have a compact contextual diff: bytes=%d data=%+v", len(preview), data)
 	}
@@ -282,19 +293,30 @@ func TestCleanCoreEditBoundsLargeDiffAndPaginatesFullDiff(t *testing.T) {
 		t.Fatalf("large edit failed: %+v", response)
 	}
 	data := response["data"].(map[string]any)
-	preview, _ := data["diff_summary"].(string)
-	if data["diff_truncated"] != true || len(preview) > cleanDiffTotalPreviewMaxBytes || data["edit_id"] == "" {
-		t.Fatalf("large diff was not bounded: bytes=%d data=%+v", len(preview), data)
+	if data["diff_summary"] != nil {
+		t.Fatalf("large edit must not duplicate diff_summary: %+v", data)
+	}
+	results, _ := data["results"].([]any)
+	preview, _ := results[0].(map[string]any)["diff"].(string)
+	if data["diff_truncated"] != true || len(preview) > cleanDiffTotalPreviewMaxBytes || len(preview) <= 32<<10 || data["edit_id"] == "" {
+		t.Fatalf("large single-file diff must retain up to the 64 KiB total preview budget: bytes=%d data=%+v", len(preview), data)
 	}
 	if diffBytes, _ := data["diff_bytes"].(float64); diffBytes <= float64(cleanDiffTotalPreviewMaxBytes) {
 		t.Fatalf("large diff byte count=%v", data["diff_bytes"])
 	}
 	editID := data["edit_id"].(string)
-	removedDiff := callEnvelope(t, rt.toolObserve, context.Background(), map[string]any{
+	diffPage := callEnvelope(t, rt.toolObserve, context.Background(), map[string]any{
 		"remote_session_id": remoteID, "view": "diff", "edit_id": editID, "offset": 0, "limit": 1024,
 	})
-	if statusOK(removedDiff) || errorCode(removedDiff) != "invalid_action" {
-		t.Fatalf("observe diff must be rejected: %+v", removedDiff)
+	if !statusOK(diffPage) {
+		t.Fatalf("observe diff failed: %+v", diffPage)
+	}
+	diffPageData, _ := diffPage["data"].(map[string]any)
+	if diffPageData["edit_id"] != editID || diffPageData["diff"] == "" || diffPageData["next_offset"] == nil {
+		t.Fatalf("observe diff page incomplete: %+v", diffPageData)
+	}
+	if diffPageData["diff_summary"] != nil {
+		t.Fatalf("observe diff must expose a single authoritative diff body: %+v", diffPageData)
 	}
 
 	events, _, err := rt.observation.store.Query(context.Background(), observation.HistoryQuery{
@@ -317,11 +339,11 @@ func TestCleanCoreEditBoundsLargeDiffAndPaginatesFullDiff(t *testing.T) {
 	if observed == nil {
 		t.Fatalf("file.changed observation for %s not found", editID)
 	}
-	results, _ := observed["results"].([]any)
-	if len(results) != 1 {
+	observedResults, _ := observed["results"].([]any)
+	if len(observedResults) != 1 {
 		t.Fatalf("observed results=%+v", observed["results"])
 	}
-	file, _ := results[0].(map[string]any)
+	file, _ := observedResults[0].(map[string]any)
 	fullDiff, _ := file["diff"].(string)
 	if len(fullDiff) <= cleanDiffFilePreviewMaxBytes || !strings.Contains(fullDiff, strings.TrimSpace(newText)) {
 		t.Fatalf("observation did not retain full diff: bytes=%d", len(fullDiff))

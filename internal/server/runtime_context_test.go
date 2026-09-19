@@ -105,10 +105,16 @@ func TestInstrumentToolUsesServerReceiveTimeWithoutClientTimestamp(t *testing.T)
 	if trace["started_at_ms"] != trace["received_at_ms"] || trace["network_latency_ms"] != float64(0) {
 		t.Fatalf("ARC did not use server receive time fallback: %+v", trace)
 	}
+	if trace["completed_at_ms"] == nil {
+		t.Fatalf("ARC metadata trace missing completion time: %+v", trace)
+	}
+	duration, _ := trace["duration"].(map[string]any)
+	if duration["server_ms"] == nil {
+		t.Fatalf("ARC metadata trace missing server duration: %+v", trace)
+	}
 	structured, _ := result.StructuredContent.(map[string]any)
-	timing, _ := structured["timing"].(map[string]any)
-	if timing["started_at_ms"] != timing["server_received_at_ms"] || timing["server_timestamp_ms"] == nil || timing["tool_duration_ms"] == nil {
-		t.Fatalf("model timing = %+v", timing)
+	if structured["timing"] != nil {
+		t.Fatalf("model structured content must not repeat timing: %+v", structured["timing"])
 	}
 }
 

@@ -159,10 +159,11 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"type":                 "object",
 		"additionalProperties": false,
 		"properties": map[string]any{
-			"path":   path,
-			"mode":   enumSchema("文件读取模式", "window", "full"),
-			"offset": numberSchema("0-based 行偏移"),
-			"limit":  numberSchema("最大行数"),
+			"path":             path,
+			"mode":             enumSchema("文件读取模式", "window", "full"),
+			"offset":           numberSchema("0-based 行偏移"),
+			"line_byte_offset": numberSchema("window 续读时 Offset 行内的模型侧 UTF-8 字节偏移；应原样复用 next_action"),
+			"limit":            numberSchema("最大行数"),
 		},
 		"required": []string{"path"},
 	}, "批量文件读取项")
@@ -179,6 +180,7 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"path":                 readPath,
 		"mode":                 enumSchema("文件读取模式", "window", "full"),
 		"offset":               numberSchema("0-based 行偏移"),
+		"line_byte_offset":     numberSchema("window 续读时 Offset 行内的模型侧 UTF-8 字节偏移；应原样复用 next_action"),
 		"limit":                numberSchema("行数或结果数量限制"),
 		"items":                readItems,
 		"max_total_bytes":      numberSchema("批量读取总字节预算"),
@@ -293,7 +295,7 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 	r.addTool(s, cleanCoreTool("observe", desc["observe"], map[string]any{
 		"remote_session_id":  remoteSession,
 		"workspace":          workspace,
-		"view":               enumSchema("观察视图；省略时 Runtime 仅在目标唯一时推导，完全无目标参数时默认为 session", "session", "task", "plan", "history", "logs"),
+		"view":               enumSchema("观察视图；省略时 Runtime 仅在目标唯一时推导，完全无目标参数时默认为 session", "session", "task", "plan", "history", "logs", "diff"),
 		"limit":              numberSchema("返回数量限制"),
 		"cursor":             stringSchema("分页游标"),
 		"call_id":            stringSchema("按调用关联 ID 过滤 history"),
@@ -309,6 +311,8 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"created_before":     stringSchema("仅返回此时间之前的事件；支持 RFC3339、YYYY-MM-DD 或 Unix 毫秒"),
 		"plan_task_id":       stringSchema("Plan Task ID；view=plan 时使用，也可用于 history 过滤"),
 		"execution_task_id":  stringSchema("执行 Task ID；view=task/logs 时使用，也可用于 history 过滤"),
+		"edit_id":            stringSchema("Edit ID；view=diff 时使用"),
+		"offset":             numberSchema("view=diff 的 UTF-8 字节偏移；可原样使用服务端 next_action 返回值"),
 		"stdout_offset":      numberSchema("view=logs 的 stdout 字节偏移；可原样使用服务端 next_action 返回值"),
 		"stderr_offset":      numberSchema("view=logs 的 stderr 字节偏移；可原样使用服务端 next_action 返回值"),
 	}, []string{"remote_session_id"}, readOnlyToolAnnotation), r.toolObserve)

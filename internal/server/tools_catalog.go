@@ -215,7 +215,7 @@ func cleanActionTool(name, description string, common map[string]any, branches m
 	// enforced by validators that implement oneOf correctly. An open root is
 	// required for connectors that flatten or pre-validate discriminated unions.
 	raw, _ := json.Marshal(map[string]any{
-		"type": "object", "description": description, "properties": rootProperties,
+		"type": "object", "properties": rootProperties,
 		"required": []string{"action"}, "oneOf": oneOf,
 	})
 	return annotatedTool(mcp.Tool{Name: name, Description: description, InputSchema: json.RawMessage(raw)}, annotation)
@@ -223,23 +223,23 @@ func cleanActionTool(name, description string, common map[string]any, branches m
 
 func activityInputSchema() map[string]any {
 	properties := map[string]any{
-		"intent":     stringSchema("当前工作 turn 的目标或要解决的问题；仅在开始新的实质工作 turn 时填写，非空 intent 会开启新 turn，不要用它描述单个工具动作"),
-		"hypothesis": stringSchema("尚未被证据确认、可被后续读取或验证推翻的暂定判断；只在假设新建或发生实质变化时填写，不要把已观察事实写成 hypothesis"),
-		"evidence":   stringSchema("刚刚获得的可核验事实、代码现状、命令结果或其他直接观察；只写事实，不写由事实推导出的判断，并避免重复上一条 evidence"),
-		"conclusion": stringSchema("由已有 evidence 支持的当前稳定判断或问题结论；它是推断结果而不是原始事实，也不是下一步动作"),
-		"next":       stringSchema("基于当前理解选择的立即下一动作；应与本次正在发起的 tool call 对齐，例如“读取自动取消任务”，不要描述更远期计划"),
-		"status":     stringSchema("无法归入前五类但值得公开的当前阶段、等待或阻塞状态；仅在状态发生实质变化时填写，不作为工具 heartbeat，也不替代 progress 的业务里程碑"),
+		"intent":     stringSchema("新实质工作 turn 的目标；非空即开启新 turn"),
+		"hypothesis": stringSchema("尚未证实、可被后续证据推翻的暂定判断"),
+		"evidence":   stringSchema("本次新观察到的可核验事实；不写推断"),
+		"conclusion": stringSchema("由 evidence 支持的当前判断"),
+		"next":       stringSchema("立即下一步；应与本次调用对齐"),
+		"status":     stringSchema("仅在阶段、等待或阻塞状态发生实质变化时填写"),
 	}
 	return map[string]any{
 		"type":                 "object",
-		"description":          "可选公开 Activity。只填写本次发生实质变化的语义字段，不重复未变化内容；可一次提供多个字段。Runtime 自动生成 turn_id、sequence、state 和 related_call_id，并按 intent、hypothesis、evidence、conclusion、next、status 顺序展开非空字段",
+		"description":          "可选公开 Activity；只填写本次发生变化的字段，不重复未变化内容",
 		"properties":           properties,
 		"additionalProperties": false,
 	}
 }
 
 func withEmbeddedActivitySchema(tool mcp.Tool) mcp.Tool {
-	if !toolSupportsEmbeddedActivity(tool.Name) || tool.InputSchema == nil {
+	if tool.InputSchema == nil {
 		return tool
 	}
 	encoded, err := json.Marshal(tool.InputSchema)
@@ -250,25 +250,76 @@ func withEmbeddedActivitySchema(tool mcp.Tool) mcp.Tool {
 	if json.Unmarshal(encoded, &schema) != nil || schema == nil {
 		return tool
 	}
-	inject := func(properties map[string]any) {
-		if properties != nil {
-			properties["activity"] = activityInputSchema()
+	if toolSupportsEmbeddedActivity(tool.Name) {
+		rootProperties, _ := schema["properties"].(map[string]any)
+		if rootProperties != nil {
+			rootProperties["activity"] = activityInputSchema()
+		}
+		if branches, ok := schema["oneOf"].([]any); ok {
+			for _, raw := range branches {
+				branch, _ := raw.(map[string]any)
+				properties, _ := branch["properties"].(map[string]any)
+				if properties != nil {
+					// Root validation owns the full optional Activity contract. Keep only
+					// an object placeholder in action branches so clients that project a
+					// oneOf branch still accept Activity without repeating its six fields.
+					properties["activity"] = map[string]any{"type": "object"}
+				}
+			}
 		}
 	}
-	rootProperties, _ := schema["properties"].(map[string]any)
-	inject(rootProperties)
-	if branches, ok := schema["oneOf"].([]any); ok {
-		for _, raw := range branches {
-			branch, _ := raw.(map[string]any)
-			properties, _ := branch["properties"].(map[string]any)
-			inject(properties)
-		}
-	}
+	deduplicateBranchDescriptions(schema)
 	raw, err := json.Marshal(schema)
 	if err == nil {
 		tool.InputSchema = json.RawMessage(raw)
 	}
 	return tool
+}
+
+func deduplicateBranchDescriptions(schema map[string]any) {
+	rootProperties, _ := schema["properties"].(map[string]any)
+	branches, _ := schema["oneOf"].([]any)
+	for _, raw := range branches {
+		branch, _ := raw.(map[string]any)
+		properties, _ := branch["properties"].(map[string]any)
+		for key, branchProperty := range properties {
+			rootProperty, ok := rootProperties[key]
+			if !ok {
+				continue
+			}
+			removeMatchingDescriptions(branchProperty, rootProperty)
+		}
+	}
+}
+
+func removeMatchingDescriptions(branch, root any) {
+	switch branchValue := branch.(type) {
+	case map[string]any:
+		rootValue, ok := root.(map[string]any)
+		if !ok {
+			return
+		}
+		if branchDescription, ok := branchValue["description"].(string); ok {
+			if rootDescription, ok := rootValue["description"].(string); ok && branchDescription == rootDescription {
+				delete(branchValue, "description")
+			}
+		}
+		for key, child := range branchValue {
+			if rootChild, ok := rootValue[key]; ok {
+				removeMatchingDescriptions(child, rootChild)
+			}
+		}
+	case []any:
+		rootValue, ok := root.([]any)
+		if !ok {
+			return
+		}
+		for index, child := range branchValue {
+			if index < len(rootValue) {
+				removeMatchingDescriptions(child, rootValue[index])
+			}
+		}
+	}
 }
 
 func stringSchema(description string) map[string]any {
@@ -388,9 +439,9 @@ func (r *Runtime) registerConsolidatedToolsCatalog(s *mcp.Server) {
 	executeCommon := map[string]any{
 		"remote_session_id": remoteSession, "purpose": stringSchema("本次执行的用户目标"),
 		"idempotency_key": stringSchema("同一执行请求重试时复用的幂等键"),
-		"scope":           enumSchema("执行范围", "workspace"), "yield_time_ms": numberSchema("等待时长"),
-		"user_confirmed": booleanSchema("用户已确认同一命令或 runtime+script；服务端仍会校验待确认摘要与脚本 SHA"),
-		"execution_mode": enumSchema("async 表示外层 Operation 异步调度；python/node runtime 使用 Task 生命周期，sqlite readonly query 直接返回结构化结果", "sync", "async"),
+		"yield_time_ms":   numberSchema("等待时长"),
+		"user_confirmed":  booleanSchema("用户已确认同一命令或 runtime+script；服务端仍会校验待确认摘要与脚本 SHA"),
+		"execution_mode":  enumSchema("async 表示外层 Operation 异步调度；python/node runtime 使用 Task 生命周期，sqlite readonly query 直接返回结构化结果", "sync", "async"),
 	}
 	executeBranches := map[string]actionSchemaBranch{
 		"run": {Description: "执行 argv+shell=false、command、项目 task，或一次性 runtime+script，四种模式互斥。argv 按元素直接传递；python/node 源码经 stdin+EOF 直接执行且不经过 shell，sqlite 对 Workspace 内现有数据库执行只读单查询并返回结构化行。", Properties: map[string]any{

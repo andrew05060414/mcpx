@@ -114,6 +114,9 @@ func acceptanceNormalized(result map[string]any, arcEnvelope map[string]any, res
 	if arcEnvelope != nil {
 		normalized["_arc"] = arcEnvelope
 	}
+	if actions, ok := result["actions"]; ok && actions != nil {
+		normalized["actions"] = actions
+	}
 	if errBody, ok := result["error"]; ok && errBody != nil {
 		normalized["error"] = errBody
 	} else if resultData, ok := data.(map[string]any); ok {
@@ -341,8 +344,8 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 			t.Fatalf("execute schema missing %q: %s", required, commandSchema)
 		}
 	}
-	if !strings.Contains(string(commandSchema), "scope") {
-		t.Fatalf("execute schema missing scope: %s", commandSchema)
+	if strings.Contains(string(commandSchema), `"scope"`) {
+		t.Fatalf("execute schema must not expose single-value scope: %s", commandSchema)
 	}
 	contextSchema, _ := json.Marshal(byName["read"].InputSchema)
 	for _, removed := range []string{"pattern", "max_files"} {
@@ -611,7 +614,7 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	}
 	executeRun := call("execute", map[string]any{
 		"action": "run", "remote_session_id": remoteID, "purpose": "acceptance execute run",
-		"command": testPrintCommand("acceptance-execute"), "scope": "workspace",
+		"command": testPrintCommand("acceptance-execute"),
 	})
 	if !statusOK(executeRun) {
 		t.Fatalf("execute run = %+v", executeRun)
@@ -673,10 +676,15 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	resumed := call("session", map[string]any{"action": "open", "remote_session_id": remoteID})
 	resumedData, _ := resumed["data"].(map[string]any)
 	if resumedData["client_refresh"] != nil || resumedData["omitted_sections"] != nil {
-		t.Fatalf("session re-open must return canonical bootstrap without revision bookkeeping: %+v", resumedData)
+		t.Fatalf("session re-open must not add legacy revision bookkeeping: %+v", resumedData)
 	}
-	if len(asMapSlice(resumedData["tools"])) == 0 || resumedData["instructions"] == nil {
-		t.Fatalf("session re-open must return complete bootstrap facts: %+v", resumedData)
+	if resumedData["revisions"] == nil || resumedData["remote_session"] == nil || resumedData["workspace"] == nil {
+		t.Fatalf("session re-open must preserve dynamic identity and revision facts: %+v", resumedData)
+	}
+	for _, field := range []string{"agent_guidance", "client_protocol", "tools", "instructions", "schema_source", "capability_version", "capability_groups", "recommended_workflows"} {
+		if resumedData[field] != nil {
+			t.Fatalf("session re-open must not repeat static bootstrap field %s: %+v", field, resumedData[field])
+		}
 	}
 
 	// --- A04 nested AGENTS ---
@@ -777,29 +785,39 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 
 	// --- A08 command_execute / task_manage short and long command paths ---
 	short := call("command_execute", map[string]any{
-		"remote_session_id": remoteID, "command": testPrintCommand("short-command"), "purpose": "run the short command protocol check", "scope": "workspace",
+		"remote_session_id": remoteID, "command": testPrintCommand("short-command"), "purpose": "run the short command protocol check",
 	})
 	shortData, _ := short["data"].(map[string]any)
 	if shortData["completed_in_call"] != true || shortData["exit_code"] != float64(0) || shortData["execution_task_id"] != nil {
 		t.Fatalf("short command should complete in one call: %+v", short)
 	}
 	long := call("command_execute", map[string]any{
-		"remote_session_id": remoteID, "command": testSleepCommand(50 * time.Millisecond), "purpose": "verify short wait task handoff", "scope": "workspace", "yield_time_ms": 1,
+		"remote_session_id": remoteID, "command": testSleepCommand(50 * time.Millisecond), "purpose": "verify short wait task handoff", "yield_time_ms": 1,
 	})
 	longData, _ := long["data"].(map[string]any)
 	longTaskID, _ := longData["execution_task_id"].(string)
 	if longData["completed_in_call"] != false || longTaskID == "" {
 		t.Fatalf("long command should return a unified Task: %+v", long)
 	}
-	attached := call("task_manage", map[string]any{
-		"action": "attach", "remote_session_id": remoteID, "execution_task_id": longTaskID, "yield_time_ms": 3000,
-	})
+	actions, _ := long["actions"].([]any)
+	if len(actions) != 1 {
+		t.Fatalf("running Task must expose one canonical continuation action: %+v", long["actions"])
+	}
+	next, _ := actions[0].(map[string]any)
+	nextArgs, _ := next["arguments"].(map[string]any)
+	if next["id"] == "" || nextArgs["execution_task_id"] != longTaskID || nextArgs["yield_time_ms"] != nil {
+		t.Fatalf("short run yield must not be inherited by continuation: %+v", next)
+	}
+	if nextArgs["stdout_offset"] != longData["stdout_next_offset"] || nextArgs["stderr_offset"] != longData["stderr_next_offset"] {
+		t.Fatalf("continuation offsets must match returned stream offsets: next=%+v data=%+v", nextArgs, longData)
+	}
+	attached := call(next["id"].(string), nextArgs)
 	attachedData, _ := attached["data"].(map[string]any)
 	if attachedData["status"] != "exited" || attachedData["exit_code"] != float64(0) || attachedData["stdout_next_offset"] == nil || attachedData["stderr_next_offset"] == nil {
 		t.Fatalf("task attach must return stream-specific offsets: %+v", attached)
 	}
 	overTen := call("command_execute", map[string]any{
-		"remote_session_id": remoteID, "command": testSleepCommand(11 * time.Second), "purpose": "verify default long-task handoff", "scope": "workspace",
+		"remote_session_id": remoteID, "command": testSleepCommand(11 * time.Second), "purpose": "verify default long-task handoff",
 	})
 	overTenData, _ := overTen["data"].(map[string]any)
 	overTenTaskID, _ := overTenData["execution_task_id"].(string)
@@ -835,12 +853,16 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	if execData["total_changed_lines"] != float64(2) && execData["total_changed_lines"] != 2 {
 		t.Fatalf("unexpected changed line count: %+v", execData)
 	}
-	if diff, _ := execData["diff_summary"].(string); !strings.Contains(diff, "-const Value = 1") || !strings.Contains(diff, "+const Value = 2") {
-		t.Fatalf("inline diff summary missing concrete change: %+v", execData)
+	if execData["diff_summary"] != nil {
+		t.Fatalf("edit response must not duplicate per-file diff as diff_summary: %+v", execData)
 	}
 	editResults, _ := execData["results"].([]any)
 	if len(editResults) != 1 {
 		t.Fatalf("edit results missing: %+v", execData)
+	}
+	editResult, _ := editResults[0].(map[string]any)
+	if diff, _ := editResult["diff"].(string); !strings.Contains(diff, "-const Value = 1") || !strings.Contains(diff, "+const Value = 2") {
+		t.Fatalf("inline per-file diff missing concrete change: %+v", execData)
 	}
 	content, err := os.ReadFile(filepath.Join(workspace, "demo.go"))
 	if err != nil || !strings.Contains(string(content), "Value = 2") {
@@ -852,8 +874,10 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 			"replacements": []any{map[string]any{"match": "const Value = 1", "replacement": "const Value = 2"}}}},
 	})
 	replayData, _ := replayed["data"].(map[string]any)
-	if replayData["idempotent_replay"] != true || replayData["diff_summary"] != execData["diff_summary"] {
-		t.Fatalf("edit retry must replay its original result: %+v", replayed)
+	replayResults, _ := replayData["results"].([]any)
+	replayResult, _ := replayResults[0].(map[string]any)
+	if replayData["idempotent_replay"] != true || replayResult["diff"] != editResult["diff"] || replayData["diff_summary"] != nil {
+		t.Fatalf("edit retry must replay its original per-file diff without a duplicate summary: %+v", replayed)
 	}
 	// --- A12 stale revision ---
 	stale := call("edit", map[string]any{
@@ -891,13 +915,18 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		t.Fatalf("zero match should fail: %+v", nomatch)
 	}
 
-	for _, removedView := range []string{"changes", "diff"} {
-		removed := call("observe", map[string]any{"remote_session_id": remoteID, "view": removedView})
-		if statusOK(removed) {
-			t.Fatalf("observe must reject removed view %q: %+v", removedView, removed)
-		}
-		if body, _ := removed["error"].(map[string]any); strings.ToUpper(fmt.Sprint(body["code"])) != "INVALID_ACTION" {
-			t.Fatalf("observe removed view %q must return INVALID_ACTION: %+v", removedView, removed)
-		}
+	removed := call("observe", map[string]any{"remote_session_id": remoteID, "view": "changes"})
+	if statusOK(removed) {
+		t.Fatalf("observe must reject removed view changes: %+v", removed)
+	}
+	if body, _ := removed["error"].(map[string]any); strings.ToUpper(fmt.Sprint(body["code"])) != "INVALID_ACTION" {
+		t.Fatalf("observe removed view changes must return INVALID_ACTION: %+v", removed)
+	}
+	missingDiffID := call("observe", map[string]any{"remote_session_id": remoteID, "view": "diff"})
+	if statusOK(missingDiffID) {
+		t.Fatalf("observe diff without edit_id must fail validation: %+v", missingDiffID)
+	}
+	if body, _ := missingDiffID["error"].(map[string]any); strings.ToUpper(fmt.Sprint(body["code"])) != "EDIT_ID_REQUIRED" {
+		t.Fatalf("observe diff without edit_id must return EDIT_ID_REQUIRED: %+v", missingDiffID)
 	}
 }

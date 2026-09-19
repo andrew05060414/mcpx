@@ -356,7 +356,6 @@ func (r *Runtime) executeCommandTask(ctx context.Context, envReq envelope.Reques
 	data["next_action"] = nextAction(nextTool, map[string]any{
 		"remote_session_id": remote.ID, "action": "attach", "execution_task_id": task.ID,
 		"stdout_offset": data["stdout_next_offset"], "stderr_offset": data["stderr_next_offset"],
-		"yield_time_ms": int(yield / time.Millisecond),
 	})
 	data["summary"] = fmt.Sprintf("Command is running as Task %s.", task.ID)
 	detail := commandExecutionDetail(purpose, scope, commandDigest, analysis)
@@ -907,7 +906,7 @@ func (r *Runtime) toolTaskManage(ctx context.Context, req *mcp.CallToolRequest) 
 			if isCleanCoreRequest(ctx) {
 				nextTool = "execute"
 			}
-			data["next_action"] = nextAction(nextTool, map[string]any{"remote_session_id": remote.ID, "action": "attach", "execution_task_id": task.ID, "stdout_offset": stdoutNext, "stderr_offset": stderrNext, "yield_time_ms": int(commandYield(envReq.Payload) / time.Millisecond)})
+			data["next_action"] = nextAction(nextTool, map[string]any{"remote_session_id": remote.ID, "action": "attach", "execution_task_id": task.ID, "stdout_offset": stdoutNext, "stderr_offset": stderrNext})
 		}
 		if code, message := annotateExecutionOutcome(data); code != "" {
 			response := envelope.Fail(envelope.StatusError, envReq.RequestID, remote.WorkspaceName, data, code, message)

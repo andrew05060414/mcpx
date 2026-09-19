@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"mcpx/internal/auth"
 	"mcpx/internal/state"
 )
@@ -39,8 +37,8 @@ func TestCreateListGetAndIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := uuid.Parse(first.Session.ID); err != nil {
-		t.Fatalf("remote session id is not UUID: %q (%v)", first.Session.ID, err)
+	if !strings.HasPrefix(first.Session.ID, "rs_") || len(first.Session.ID) != 19 {
+		t.Fatalf("remote session id must be compact 96-bit base64url form: %q", first.Session.ID)
 	}
 	second, err := service.Create(context.Background(), owner, in)
 	if err != nil {
@@ -70,6 +68,26 @@ func TestCreateListGetAndIdempotency(t *testing.T) {
 	got, err := service.Get(context.Background(), owner, first.Session.ID)
 	if err != nil || got.Role != "owner" {
 		t.Fatalf("get: %+v err=%v", got, err)
+	}
+}
+
+func TestGetAcceptsLegacyUUIDSessionID(t *testing.T) {
+	service, _ := testService(t)
+	owner := testPrincipal("legacy-owner")
+	now := time.Now().UTC().UnixMilli()
+	legacyID := "43f44cc9-78b4-4f2e-8abc-ce3b2470798d"
+	if _, err := service.db.Exec(`INSERT INTO principals (id, kind, subject_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`, owner.ID, owner.Kind, owner.SubjectHash, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.db.Exec(`INSERT INTO remote_sessions (id, workspace_name, workspace_path, label, description, status, owner_principal_id, version, created_at, last_active_at) VALUES (?, 'mcpx', ?, 'legacy', '', 'active', ?, 1, ?, ?)`, legacyID, t.TempDir(), owner.ID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.db.Exec(`INSERT INTO remote_session_members (remote_session_id, principal_id, role, joined_at, last_active_at) VALUES (?, ?, 'owner', ?, ?)`, legacyID, owner.ID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.Get(context.Background(), owner, legacyID)
+	if err != nil || got.ID != legacyID {
+		t.Fatalf("legacy UUID session lookup failed: got=%+v err=%v", got, err)
 	}
 }
 

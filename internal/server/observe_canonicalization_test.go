@@ -18,6 +18,7 @@ func TestObserveCanonicalizesUniqueTargets(t *testing.T) {
 		{name: "plan task", args: map[string]any{"remote_session_id": "rs_1", "plan_task_id": "pt_1"}, want: "plan"},
 		{name: "history keyword", args: map[string]any{"remote_session_id": "rs_1", "keyword": "panic"}, want: "history"},
 		{name: "explicit logs", args: map[string]any{"remote_session_id": "rs_1", "view": "logs", "execution_task_id": "task_1"}, want: "logs"},
+		{name: "edit diff", args: map[string]any{"remote_session_id": "rs_1", "edit_id": "edit_1"}, want: "diff"},
 		{name: "conflicting targets", args: map[string]any{"remote_session_id": "rs_1", "execution_task_id": "task_1", "keyword": "panic"}, want: ""},
 	}
 	for _, tt := range tests {
@@ -52,17 +53,22 @@ func TestObservePublicSchemaMatchesCanonicalSemantics(t *testing.T) {
 	for _, raw := range view["enum"].([]any) {
 		values[raw.(string)] = true
 	}
-	for _, required := range []string{"session", "task", "plan", "history", "logs"} {
+	for _, required := range []string{"session", "task", "plan", "history", "logs", "diff"} {
 		if !values[required] {
 			t.Fatalf("observe view enum missing %q: %+v", required, values)
 		}
 	}
-	for _, removed := range []string{"status", "changes", "diff"} {
+	for _, removed := range []string{"status", "changes"} {
 		if values[removed] {
 			t.Fatalf("observe view enum exposes removed view %q: %+v", removed, values)
 		}
 	}
-	for _, removedField := range []string{"edit_id", "include_diff", "path", "offset"} {
+	for _, field := range []string{"edit_id", "offset"} {
+		if properties[field] == nil {
+			t.Fatalf("observe diff schema missing field %q: %s", field, encoded)
+		}
+	}
+	for _, removedField := range []string{"include_diff", "path"} {
 		if properties[removedField] != nil {
 			t.Fatalf("observe schema exposes removed field %q: %s", removedField, encoded)
 		}

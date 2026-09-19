@@ -155,6 +155,126 @@ func TestReadItemsLimitAndListPathAreStructured(t *testing.T) {
 	}
 }
 
+func TestSingleReadWindowUsesModelResultBudget(t *testing.T) {
+	rt := newWorkspaceRuntime(t, "demo")
+	rt.cfg.Limits.MaxResultBytes = 4
+	workspace, _ := rt.reg.Get("demo")
+	if err := os.WriteFile(filepath.Join(workspace.Path, "single-budget.txt"), []byte("abcdef\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened := callEnvelope(t, rt.toolSession, context.Background(), map[string]any{"action": "open", "workspace": "demo"})
+	remoteID := opened["remote_session_id"].(string)
+
+	first := callEnvelope(t, rt.toolRead, context.Background(), map[string]any{
+		"remote_session_id": remoteID, "view": "file", "path": "single-budget.txt", "mode": "window", "offset": 0, "limit": 1,
+	})
+	data, _ := first["data"].(map[string]any)
+	firstNext, _ := data["next_action"].(map[string]any)
+	firstArgs, _ := firstNext["arguments"].(map[string]any)
+	if data["content"] != "abcd" || data["truncated"] != true || firstArgs["line_byte_offset"] != float64(4) {
+		t.Fatalf("single read must obey max_result_bytes: %+v", data)
+	}
+
+	stricter := callEnvelope(t, rt.toolRead, context.Background(), map[string]any{
+		"remote_session_id": remoteID, "view": "file", "path": "single-budget.txt", "mode": "window", "offset": 0, "limit": 1, "max_bytes_per_file": 2,
+	})
+	strictData, _ := stricter["data"].(map[string]any)
+	strictNext, _ := strictData["next_action"].(map[string]any)
+	strictArgs, _ := strictNext["arguments"].(map[string]any)
+	if strictData["content"] != "ab" || strictArgs["line_byte_offset"] != float64(2) {
+		t.Fatalf("max_bytes_per_file must further tighten single read budget: %+v", strictData)
+	}
+}
+
+func TestReadLongLineNextActionAdvancesWithinLine(t *testing.T) {
+	rt := newWorkspaceRuntime(t, "demo")
+	workspace, _ := rt.reg.Get("demo")
+	if err := os.WriteFile(filepath.Join(workspace.Path, "long-line.txt"), []byte("abcdef\nnext\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened := callEnvelope(t, rt.toolSession, context.Background(), map[string]any{"action": "open", "workspace": "demo"})
+	remoteID := opened["remote_session_id"].(string)
+
+	first := callEnvelope(t, rt.toolRead, context.Background(), map[string]any{
+		"remote_session_id": remoteID,
+		"view":              "file",
+		"items":             []any{map[string]any{"path": "long-line.txt", "offset": 0, "limit": 2}},
+		"max_total_bytes":   3,
+	})
+	if !statusOK(first) {
+		t.Fatalf("first long-line read=%+v", first)
+	}
+	firstData, _ := first["data"].(map[string]any)
+	firstResults, _ := firstData["results"].([]any)
+	firstItem, _ := firstResults[0].(map[string]any)
+	if firstItem["content"] != "abc" || firstItem["next_offset"] != float64(0) || firstItem["next_line_byte_offset"] != float64(3) {
+		t.Fatalf("first long-line fragment=%+v", firstItem)
+	}
+	next, _ := firstData["next_action"].(map[string]any)
+	arguments, _ := next["arguments"].(map[string]any)
+	items, _ := arguments["items"].([]any)
+	nextItem, _ := items[0].(map[string]any)
+	if next["tool"] != "read" || nextItem["offset"] != float64(0) || nextItem["line_byte_offset"] != float64(3) {
+		t.Fatalf("long-line next action=%+v", next)
+	}
+
+	second := callEnvelope(t, rt.toolRead, context.Background(), arguments)
+	if !statusOK(second) {
+		t.Fatalf("second long-line read=%+v", second)
+	}
+	secondData, _ := second["data"].(map[string]any)
+	secondResults, _ := secondData["results"].([]any)
+	secondItem, _ := secondResults[0].(map[string]any)
+	if secondItem["content"] != "def" || secondItem["line_byte_offset"] != float64(3) || secondItem["next_line_byte_offset"] != float64(6) {
+		t.Fatalf("second long-line fragment=%+v", secondItem)
+	}
+}
+
+func TestReadBatchRaisesContinuationBudgetForUTF8Rune(t *testing.T) {
+	rt := newWorkspaceRuntime(t, "demo")
+	workspace, _ := rt.reg.Get("demo")
+	if err := os.WriteFile(filepath.Join(workspace.Path, "unicode-line.txt"), []byte("你a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened := callEnvelope(t, rt.toolSession, context.Background(), map[string]any{"action": "open", "workspace": "demo"})
+	remoteID := opened["remote_session_id"].(string)
+
+	first := callEnvelope(t, rt.toolRead, context.Background(), map[string]any{
+		"remote_session_id": remoteID,
+		"view":              "file",
+		"items":             []any{map[string]any{"path": "unicode-line.txt", "offset": 0, "limit": 1}},
+		"max_total_bytes":   1,
+	})
+	firstData, _ := first["data"].(map[string]any)
+	firstResults, _ := firstData["results"].([]any)
+	firstItem, _ := firstResults[0].(map[string]any)
+	if firstItem["content"] != "" || firstItem["truncated"] != true {
+		t.Fatalf("first unicode fragment=%+v", firstItem)
+	}
+	firstNext, _ := firstData["next_action"].(map[string]any)
+	firstArgs, _ := firstNext["arguments"].(map[string]any)
+	if firstArgs["max_total_bytes"] != float64(4) {
+		t.Fatalf("unicode recovery budget=%+v", firstNext)
+	}
+
+	second := callEnvelope(t, rt.toolRead, context.Background(), firstArgs)
+	secondData, _ := second["data"].(map[string]any)
+	secondResults, _ := secondData["results"].([]any)
+	secondItem, _ := secondResults[0].(map[string]any)
+	if secondItem["content"] != "你a" || secondItem["next_line_byte_offset"] != float64(4) {
+		t.Fatalf("second unicode fragment=%+v", secondItem)
+	}
+	secondNext, _ := secondData["next_action"].(map[string]any)
+	secondArgs, _ := secondNext["arguments"].(map[string]any)
+	third := callEnvelope(t, rt.toolRead, context.Background(), secondArgs)
+	thirdData, _ := third["data"].(map[string]any)
+	thirdResults, _ := thirdData["results"].([]any)
+	thirdItem, _ := thirdResults[0].(map[string]any)
+	if thirdItem["content"] != "\n" || thirdItem["truncated"] != false {
+		t.Fatalf("final unicode fragment=%+v", thirdItem)
+	}
+}
+
 func TestSourceReadDisplayIncludesMarkdownSourceBlock(t *testing.T) {
 	data := map[string]any{
 		"path":        "src/Supplier.vue",
