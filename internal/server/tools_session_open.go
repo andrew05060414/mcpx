@@ -264,6 +264,7 @@ func (r *Runtime) toolSessionOpen(ctx context.Context, req *mcp.CallToolRequest)
 		data["git_identity"] = gitIdentity
 	}
 
+	r.bindRemoteSession(ctx, principal, session.ID)
 	r.logAudit(audit.Event{
 		RequestID: envReq.RequestID, RemoteSessionID: session.ID, Workspace: session.WorkspaceName,
 		Tool: "session", Status: "ok",

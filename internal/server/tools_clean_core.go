@@ -121,6 +121,7 @@ func cleanCoreTool(name, description string, properties map[string]any, required
 		"properties":           properties,
 		"additionalProperties": false,
 	}
+	required = withoutBoundSessionRequirement(required)
 	if len(required) > 0 {
 		schema["required"] = required
 	}
@@ -130,7 +131,7 @@ func cleanCoreTool(name, description string, properties map[string]any, required
 
 func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 	desc := prompts.MustDescriptions()
-	remoteSession := stringSchema("跨客户端复用的 Remote Session 标识")
+	remoteSession := stringSchema("Remote Session 标识；当前 MCP transport 已绑定 Session 时省略，显式传入可覆盖绑定")
 	workspace := stringSchema("已注册的 Workspace 名称")
 	path := stringSchema("Workspace 内的相对文件路径")
 
@@ -208,7 +209,8 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"properties": map[string]any{
 			"path":           path,
 			"operation":      enumSchema("文件操作；用户提出删除、移除或清理时请使用 move_out(action=prepare)，确认后再 move_out(action=submit)", "create", "update", "rename"),
-			"base_sha256":    stringSchema("update/rename 必填读取时获得的文件 sha256；create 通过目标不存在保护"),
+			"rev":            stringSchema("update/rename 首选；read 返回的 compact file revision"),
+			"base_sha256":    stringSchema("兼容旧客户端的完整 SHA-256 revision guard；新调用优先使用 rev"),
 			"content":        stringSchema("新文件的完整内容"),
 			"content_base64": stringSchema("完整目标字节的标准 Base64；仅 create/update，须 newline_policy=exact，与 content/replacements/range 互斥"),
 			"newline_policy": enumSchema("preserve 使用现有逻辑文本编辑；exact 原样写入 content_base64 字节，不转换编码/BOM/换行", "preserve", "exact"),
@@ -246,7 +248,7 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"required": []string{"path", "operation"},
 		"allOf": []map[string]any{{
 			"if":   map[string]any{"properties": map[string]any{"operation": map[string]any{"enum": []string{"update", "rename"}}}},
-			"then": map[string]any{"required": []string{"base_sha256"}},
+			"then": map[string]any{"anyOf": []map[string]any{{"required": []string{"rev"}}, {"required": []string{"base_sha256"}}}},
 		}},
 	}
 	r.addTool(s, cleanCoreTool("edit", desc["edit"], map[string]any{
@@ -262,7 +264,8 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"additionalProperties": false,
 		"properties": map[string]any{
 			"path":            path,
-			"expected_sha256": stringSchema("普通文件必填从 read 获得的 SHA-256 revision guard；目录省略；symlink 可选，prepare 会冻结链接文本摘要。目标类型由 Runtime 安全推导。"),
+			"rev":             stringSchema("普通文件首选；read 返回的 compact file revision。目录省略；Runtime 会在冻结 manifest 前恢复完整 SHA"),
+			"expected_sha256": stringSchema("兼容旧客户端的完整 SHA-256 revision guard；新调用优先使用 rev"),
 		},
 		"required": []string{"path"},
 	}

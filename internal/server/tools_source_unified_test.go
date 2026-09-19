@@ -279,7 +279,7 @@ func TestSourceReadDisplayIncludesMarkdownSourceBlock(t *testing.T) {
 	data := map[string]any{
 		"path":        "src/Supplier.vue",
 		"content":     "<template>\n  <div />\n</template>\n",
-		"sha256":      "sha256:test-revision",
+		"rev":         "123456789012345678901234",
 		"line_ending": "CRLF",
 		"format": map[string]any{
 			"charset": "utf-8", "bom": "none", "line_ending": "CRLF",
@@ -292,7 +292,7 @@ func TestSourceReadDisplayIncludesMarkdownSourceBlock(t *testing.T) {
 	}
 
 	display := sourceReadDisplay(data, "Read src/Supplier.vue (10 lines).")
-	for _, want := range []string{"Read src/Supplier.vue", "Revision: `sha256:test-revision`", "### `src/Supplier.vue` (lines 5-7 of 10)", "```vue", "<template>"} {
+	for _, want := range []string{"Read src/Supplier.vue", "Revision: `123456789012345678901234`", "### `src/Supplier.vue` (lines 5-7 of 10)", "```vue", "<template>"} {
 		if !strings.Contains(display, want) {
 			t.Fatalf("source display missing %q: %s", want, display)
 		}
@@ -309,7 +309,7 @@ func TestFileReadResultExposesSourceInHostTextAndKeepsStructuredData(t *testing.
 	data := map[string]any{
 		"path":        "src/Supplier.vue",
 		"content":     "<template>\n  <div />\n</template>\n",
-		"sha256":      "sha256:test-revision",
+		"rev":         "123456789012345678901234",
 		"offset":      0,
 		"limit":       3,
 		"total_lines": 3,
@@ -320,7 +320,7 @@ func TestFileReadResultExposesSourceInHostTextAndKeepsStructuredData(t *testing.
 	if !ok {
 		t.Fatalf("first content type = %T", wrapped.Content[0])
 	}
-	for _, want := range []string{"Read src/Supplier.vue", "Revision: `sha256:test-revision`", "```vue", "<template>"} {
+	for _, want := range []string{"Read src/Supplier.vue", "Revision: `123456789012345678901234`", "```vue", "<template>"} {
 		if !strings.Contains(text.Text, want) {
 			t.Fatalf("host text missing %q: %s", want, text.Text)
 		}
@@ -332,10 +332,10 @@ func TestFileReadResultExposesSourceInHostTextAndKeepsStructuredData(t *testing.
 
 func TestSourceReadDisplayIncludesRevisionForEmptyFile(t *testing.T) {
 	display := sourceReadDisplay(map[string]any{
-		"path":   "empty.txt",
-		"sha256": "sha256:empty-file",
+		"path": "empty.txt",
+		"rev":  "123456789012345678901235",
 	}, "Read empty.txt (0 lines).")
-	if !strings.Contains(display, "Revision: `sha256:empty-file`") {
+	if !strings.Contains(display, "Revision: `123456789012345678901235`") {
 		t.Fatalf("empty-file revision missing: %s", display)
 	}
 }
@@ -385,7 +385,7 @@ func TestFileReadFullReturnsHTMLAndDirectImageContent(t *testing.T) {
 
 	htmlResult := read("preview.html")
 	htmlText, ok := htmlResult.Content[0].(*mcp.TextContent)
-	if !ok || !strings.Contains(htmlText.Text, "```html\n"+string(html)+"```") || !strings.Contains(htmlText.Text, "Revision: `sha256:") {
+	if !ok || !strings.Contains(htmlText.Text, "```html\n"+string(html)+"```") || !strings.Contains(htmlText.Text, "Revision: `") {
 		t.Fatalf("full HTML was not returned directly: %#v", htmlResult.Content)
 	}
 	htmlData := structuredBusinessData(htmlResult)
@@ -453,7 +453,7 @@ func TestFileReadDecodesUTF16ForModelAndWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	window := structuredBusinessData(windowResult)
-	if window["content"] != "two\n" || window["sha256"] != full["sha256"] {
+	if window["content"] != "two\n" || window["rev"] != full["rev"] {
 		t.Fatalf("UTF-16 window result=%+v full=%+v", window, full)
 	}
 }

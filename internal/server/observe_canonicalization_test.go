@@ -42,9 +42,11 @@ func TestObservePublicSchemaMatchesCanonicalSemantics(t *testing.T) {
 	if err := json.Unmarshal(encoded, &schema); err != nil {
 		t.Fatal(err)
 	}
-	for _, raw := range schema["required"].([]any) {
-		if raw == "view" {
-			t.Fatalf("observe view should be inferable, schema=%s", encoded)
+	if required, ok := schema["required"].([]any); ok {
+		for _, raw := range required {
+			if raw == "view" || raw == "remote_session_id" {
+				t.Fatalf("observe view/session should be inferable from request/transport, schema=%s", encoded)
+			}
 		}
 	}
 	properties := schema["properties"].(map[string]any)

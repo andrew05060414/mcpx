@@ -199,7 +199,7 @@ func cleanActionTool(name, description string, common map[string]any, branches m
 		for key, value := range branch.Properties {
 			properties[key] = value
 		}
-		required := append([]string{}, branch.Required...)
+		required := withoutBoundSessionRequirement(branch.Required)
 		required = append([]string{"action"}, required...)
 		oneOf = append(oneOf, map[string]any{
 			"type":                 "object",
@@ -219,6 +219,16 @@ func cleanActionTool(name, description string, common map[string]any, branches m
 		"required": []string{"action"}, "oneOf": oneOf,
 	})
 	return annotatedTool(mcp.Tool{Name: name, Description: description, InputSchema: json.RawMessage(raw)}, annotation)
+}
+
+func withoutBoundSessionRequirement(required []string) []string {
+	out := make([]string, 0, len(required))
+	for _, field := range required {
+		if field != "remote_session_id" {
+			out = append(out, field)
+		}
+	}
+	return out
 }
 
 func activityInputSchema() map[string]any {
@@ -352,7 +362,7 @@ func enumSchema(description string, values ...string) map[string]any {
 // registerConsolidatedToolsCatalog registers the clean-core support tools.
 func (r *Runtime) registerConsolidatedToolsCatalog(s *mcp.Server) {
 	toolDesc := prompts.MustDescriptions()
-	remoteSession := stringSchema("持久化的 Remote Session 标识")
+	remoteSession := stringSchema("Remote Session 标识；当前 MCP transport 已绑定 Session 时省略，显式传入可覆盖绑定")
 	workspace := stringSchema("已注册的 Workspace 名称")
 	path := stringSchema("工作区相对路径")
 	supportTool := cleanCoreTool
@@ -408,18 +418,18 @@ func (r *Runtime) registerConsolidatedToolsCatalog(s *mcp.Server) {
 			"type":                 "object",
 			"description":          "单操作模式；支持 status、wait、result、cancel、resume。",
 			"properties":           operationBranchProperties(false),
-			"required":             []string{"remote_session_id", "action", "operation_id"},
+			"required":             []string{"action", "operation_id"},
 			"additionalProperties": false,
 		},
 		map[string]any{
 			"type":                 "object",
 			"description":          "批量查询模式；仅支持 status、result，直接传 operation_ids。",
 			"properties":           operationBranchProperties(true),
-			"required":             []string{"remote_session_id", "action", "operation_ids"},
+			"required":             []string{"action", "operation_ids"},
 			"additionalProperties": false,
 		},
 	}
-	operationManageSchema["required"] = []string{"remote_session_id", "action"}
+	operationManageSchema["required"] = []string{"action"}
 	operationManage.InputSchema = mustSchemaJSON(operationManageSchema)
 	r.addTool(s, operationManage, r.toolOperationManage)
 

@@ -54,34 +54,36 @@ type Options struct {
 
 // Runtime is the MCPX process root.
 type Runtime struct {
-	opts            Options
-	cfg             config.Config
-	reg             *workspace.Registry
-	approvals       *approval.Store
-	audit           *audit.Logger
-	globalCfgPath   string
-	tasks           *terminal.TaskManager
-	secrets         *secrets.Store
-	oauth           *oauth.Server
-	state           *state.Store
-	remote          *remotesession.Service
-	environment     *environment.Service
-	workspaceDiff   *workspacechanges.Service
-	fileSnapshots   *filesnapshot.Store
-	artifacts       *artifact.Service
-	plans           *plan.Service
-	deletions       *deletion.Store
-	retention       *state.RetentionService
-	retentionCancel context.CancelFunc
-	retentionDone   chan struct{}
-	screenshot      screenCapturer
-	browserService  *browseruse.Service
-	observation     *observationBridge
-	operations      *operation.Service
-	observerSocket  *observation.SocketServer
-	activityMu      sync.Mutex
-	closeOnce       sync.Once
-	closeErr        error
+	opts             Options
+	cfg              config.Config
+	reg              *workspace.Registry
+	approvals        *approval.Store
+	audit            *audit.Logger
+	globalCfgPath    string
+	tasks            *terminal.TaskManager
+	secrets          *secrets.Store
+	oauth            *oauth.Server
+	state            *state.Store
+	remote           *remotesession.Service
+	environment      *environment.Service
+	workspaceDiff    *workspacechanges.Service
+	fileSnapshots    *filesnapshot.Store
+	artifacts        *artifact.Service
+	plans            *plan.Service
+	deletions        *deletion.Store
+	retention        *state.RetentionService
+	retentionCancel  context.CancelFunc
+	retentionDone    chan struct{}
+	screenshot       screenCapturer
+	browserService   *browseruse.Service
+	observation      *observationBridge
+	operations       *operation.Service
+	observerSocket   *observation.SocketServer
+	activityMu       sync.Mutex
+	sessionBindingMu sync.RWMutex
+	sessionBindings  map[string]string
+	closeOnce        sync.Once
+	closeErr         error
 
 	// For schema revision and capability catalog.
 	toolIndex    map[string]mcp.Tool

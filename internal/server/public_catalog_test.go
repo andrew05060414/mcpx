@@ -413,10 +413,11 @@ func TestPublicCatalogIsExactlyTheCleanCoreContract(t *testing.T) {
 		required := branch["required"].([]any)
 		properties := branch["properties"].(map[string]any)
 		action := properties["action"].(map[string]any)
-		for _, key := range []string{"remote_session_id", "action"} {
-			if properties[key] == nil || !containsSchemaRequired(required, key) {
-				t.Fatalf("客户端独立投影 oneOf 分支会丢失必需参数 %s", key)
-			}
+		if properties["remote_session_id"] == nil || containsSchemaRequired(required, "remote_session_id") {
+			t.Fatal("客户端独立投影 oneOf 分支必须保留 optional remote_session_id 覆盖")
+		}
+		if properties["action"] == nil || !containsSchemaRequired(required, "action") {
+			t.Fatal("客户端独立投影 oneOf 分支必须保留必需参数 action")
 		}
 		switch {
 		case containsSchemaRequired(required, "operation_id"):

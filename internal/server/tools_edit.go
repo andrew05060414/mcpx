@@ -92,6 +92,9 @@ func (r *Runtime) toolEdit(ctx context.Context, req *mcp.CallToolRequest) (*mcp.
 			}
 		}
 	}
+	if err := resolveEditRevisions(session.WorkspacePath, edits); err != nil {
+		return r.editToolError(envReq, session, err)
+	}
 
 	idempotencyKey := strings.TrimSpace(stringPayload(envReq.Payload, "idempotency_key"))
 	fingerprint := cleanEditFingerprint(envReq, edits)
@@ -147,7 +150,7 @@ func (r *Runtime) toolEdit(ctx context.Context, req *mcp.CallToolRequest) (*mcp.
 		}
 	}
 
-	editID := newRuntimeID("edit", 12)
+	editID := newOpaqueID("edit", 12)
 	preparedPersisted := false
 	var preparedResult edit.BatchResult
 	result, err := edit.ApplyBatchWithHook(edit.BatchRequest{
@@ -236,7 +239,9 @@ func (r *Runtime) editToolError(envReq envelope.Request, session remotesession.S
 			details["replacement_index"] = ae.Index
 		}
 		if ae.Current != "" {
-			details["current_sha256"] = ae.Current
+			if rev := compactFileRevision(ae.Current); rev != "" {
+				details["current_rev"] = rev
+			}
 		}
 		if ae.ChangedLines > 0 {
 			details["total_changed_lines"] = ae.ChangedLines
@@ -271,11 +276,11 @@ func (r *Runtime) editToolError(envReq envelope.Request, session remotesession.S
 func editRecovery(code string, ae *edit.ApplyError) any {
 	switch code {
 	case "STALE_REVISION":
-		return "re-read the file to get the latest sha256, update base_sha256, and retry with a new idempotency_key; the old key remains bound to the stale request"
+		return "re-read the file to get the latest rev and retry with a new idempotency_key; the old key remains bound to the stale request"
 	case "MATCH_NOT_FOUND", "MATCH_AMBIGUOUS":
 		return "re-read the file and use a longer unique match snippet, or use a revision-guarded line range when the target lines are known"
 	case "RANGE_OUT_OF_BOUNDS":
-		return "re-read the file to refresh its current line layout and sha256, then retry the range against that revision"
+		return "re-read the file to refresh its current line layout and rev, then retry the range against that revision"
 	case "TOO_MANY_CHANGES":
 		return map[string]any{
 			"action":            "split_edit",
@@ -312,7 +317,7 @@ func editSuggestedNext(code, remoteSessionID string, ae *edit.ApplyError) map[st
 	}
 	switch code {
 	case "STALE_REVISION":
-		return refreshWindow("refresh the current file sha256 before regenerating the edit")
+		return refreshWindow("refresh the current file rev before regenerating the edit")
 	case "MATCH_NOT_FOUND", "MATCH_AMBIGUOUS", "RANGE_OUT_OF_BOUNDS":
 		return nextActionWithReason("read", "refresh the current file content before regenerating the update", map[string]any{
 			"remote_session_id": remoteSessionID,
@@ -419,8 +424,15 @@ func parseCleanEdits(payload map[string]any) ([]edit.FileEdit, error) {
 		if strings.TrimSpace(edits[i].Operation) == "" {
 			return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].operation required", i), Index: i, Err: edit.ErrInvalidInput}
 		}
-		if (strings.TrimSpace(edits[i].Operation) == edit.OpUpdate || strings.TrimSpace(edits[i].Operation) == edit.OpRename) && strings.TrimSpace(edits[i].BaseSHA256) == "" {
-			return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].base_sha256 required for update/rename", i), Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
+		if strings.TrimSpace(edits[i].Operation) == edit.OpUpdate || strings.TrimSpace(edits[i].Operation) == edit.OpRename {
+			rev := strings.TrimSpace(edits[i].Revision)
+			base := strings.TrimSpace(edits[i].BaseSHA256)
+			if rev == "" && base == "" {
+				return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].rev required for update/rename (legacy base_sha256 also accepted)", i), Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
+			}
+			if rev != "" && base != "" {
+				return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].rev and base_sha256 are mutually exclusive", i), Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
+			}
 		}
 	}
 	return edits, nil

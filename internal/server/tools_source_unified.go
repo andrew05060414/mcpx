@@ -75,7 +75,7 @@ func (r *Runtime) toolFileReadUnified(ctx context.Context, req *mcp.CallToolRequ
 		results := make([]map[string]any, 0, len(batch.Results))
 		for _, item := range batch.Results {
 			entry := map[string]any{
-				"path": item.Path, "ok": item.OK, "content": item.Content, "sha256": item.SHA256, "line_ending": item.LineEnding,
+				"path": item.Path, "ok": item.OK, "content": item.Content, "rev": compactFileRevision(item.SHA256), "line_ending": item.LineEnding,
 				"format": formatMap(item.Format),
 				"offset": item.Offset, "limit": item.Limit, "total_lines": item.TotalLines, "truncated": item.Truncated,
 			}
@@ -145,7 +145,7 @@ func (r *Runtime) toolFileReadUnified(ctx context.Context, req *mcp.CallToolRequ
 		return r.sourceError(envReq, session.ID, session.WorkspaceName, err)
 	}
 	data := map[string]any{
-		"path": read.Path, "content": read.Content, "sha256": read.SHA256, "line_ending": read.LineEnding,
+		"path": read.Path, "content": read.Content, "rev": compactFileRevision(read.SHA256), "line_ending": read.LineEnding,
 		"format": formatMap(read.Format),
 		"offset": read.Offset, "limit": read.Limit, "total_lines": read.TotalLines, "truncated": read.Truncated,
 	}
@@ -280,7 +280,7 @@ func (r *Runtime) toolFileReadMixedBatch(_ context.Context, envReq envelope.Requ
 		}
 		entry := map[string]any{
 			"path": read.Path, "mode": "window", "ok": true, "content": read.Content,
-			"sha256": read.SHA256, "line_ending": read.LineEnding, "format": formatMap(read.Format),
+			"rev": compactFileRevision(read.SHA256), "line_ending": read.LineEnding, "format": formatMap(read.Format),
 			"offset": read.Offset, "limit": read.Limit, "total_lines": read.TotalLines, "truncated": read.Truncated,
 		}
 		if read.LineByteOffset > 0 {
@@ -354,7 +354,7 @@ func fullFileReadData(read file.FullReadResult) map[string]any {
 		"size_bytes":  read.Size,
 		"line_ending": read.LineEnding,
 		"format":      formatMap(read.Format),
-		"sha256":      read.SHA256,
+		"rev":         compactFileRevision(read.SHA256),
 	}
 	if strings.HasPrefix(read.MIMEType, "image/") && read.MIMEType != "image/svg+xml" {
 		data["encoding"] = "base64"
@@ -458,7 +458,7 @@ func sourceReadDisplay(data map[string]any, summary string) string {
 					fmt.Fprintf(&builder, "\n\n`%s`: %s", path, message)
 				}
 			}
-			if revision, _ := item["sha256"].(string); strings.TrimSpace(revision) != "" {
+			if revision, _ := item["rev"].(string); strings.TrimSpace(revision) != "" {
 				fmt.Fprintf(&builder, "\n\nRevision: `%s`", revision)
 			}
 			continue
@@ -485,9 +485,9 @@ func sourceReadDisplay(data map[string]any, summary string) string {
 			builder.WriteString("\n\n> 内容已截断；请继续调用 `read(view=file)` 读取后续内容。")
 		}
 		// Keep Revision in text so terminal agents that only read content can
-		// copy base_sha256. format/line_ending/charset live only in structured
+		// copy rev. format/line_ending/charset live only in structured
 		// fields (data.format / data.line_ending) — do not restate as prose.
-		if revision, _ := item["sha256"].(string); strings.TrimSpace(revision) != "" {
+		if revision, _ := item["rev"].(string); strings.TrimSpace(revision) != "" {
 			fmt.Fprintf(&builder, "\n\nRevision: `%s`", revision)
 		}
 	}
@@ -623,6 +623,7 @@ func (r *Runtime) toolContextQueryAction(ctx context.Context, req *mcp.CallToolR
 		})
 	}
 	files, _ := data["files"].([]map[string]any)
+	data, _ = compactRevisionPayload(data).(map[string]any)
 	return compactToolResult(data, fmt.Sprintf("Context query returned %d file(s).", len(files))), nil
 }
 
@@ -646,7 +647,7 @@ func (r *Runtime) toolContextSearchAction(ctx context.Context, req *mcp.CallTool
 	if err != nil {
 		return r.sourceError(envReq, session.ID, session.WorkspaceName, err)
 	}
-	data := map[string]any{"matches": resultData.Matches, "truncated": resultData.Truncated}
+	data := map[string]any{"matches": compactRevisionPayload(resultData.Matches), "truncated": resultData.Truncated}
 	if resultData.NextCursor != "" {
 		data["next_cursor"] = resultData.NextCursor
 		data["next_action"] = nextAction("context_query", map[string]any{

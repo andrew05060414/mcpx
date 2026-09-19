@@ -292,7 +292,7 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	if err := json.Unmarshal(moveSchema, &moveSchemaMap); err != nil {
 		t.Fatal(err)
 	}
-	for _, needle := range []string{"prepare", "submit", "targets", "expected_sha256", "symlink", "confirmation_uuid"} {
+	for _, needle := range []string{"prepare", "submit", "targets", "rev", "expected_sha256", "symlink", "confirmation_uuid"} {
 		if !strings.Contains(string(moveSchema), needle) {
 			t.Fatalf("move_out schema missing %q: %s", needle, moveSchema)
 		}
@@ -320,18 +320,24 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 			submitRequired, _ = branch["required"].([]any)
 		}
 	}
-	for _, field := range []string{"action", "remote_session_id", "purpose", "targets"} {
+	for _, field := range []string{"action", "purpose", "targets"} {
 		if prepareProperties[field] == nil || !containsSchemaRequired(prepareRequired, field) {
 			t.Fatalf("move_out prepare branch missing required %q: %s", field, moveSchema)
 		}
 	}
+	if prepareProperties["remote_session_id"] == nil || containsSchemaRequired(prepareRequired, "remote_session_id") {
+		t.Fatalf("move_out prepare must keep optional remote_session_id override: %s", moveSchema)
+	}
 	if prepareProperties["workspace"] != nil || containsSchemaRequired(prepareRequired, "idempotency_key") || strings.Contains(string(moveSchema), `"kind"`) {
 		t.Fatalf("move_out prepare must let Runtime infer workspace/kind and make idempotency optional: %s", moveSchema)
 	}
-	for _, field := range []string{"action", "remote_session_id", "confirmation_uuid"} {
+	for _, field := range []string{"action", "confirmation_uuid"} {
 		if submitProperties[field] == nil || !containsSchemaRequired(submitRequired, field) {
 			t.Fatalf("move_out submit branch missing required %q: %s", field, moveSchema)
 		}
+	}
+	if submitProperties["remote_session_id"] == nil || containsSchemaRequired(submitRequired, "remote_session_id") {
+		t.Fatalf("move_out submit must keep optional remote_session_id override: %s", moveSchema)
 	}
 	for _, forbidden := range []string{"workspace", "purpose", "targets", "move_request_id", "manifest_sha256", "idempotency_key"} {
 		if submitProperties[forbidden] != nil {
@@ -339,10 +345,17 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		}
 	}
 	commandSchema, _ := json.Marshal(byName["execute"].InputSchema)
-	for _, required := range []string{"remote_session_id", "purpose"} {
-		if !strings.Contains(string(commandSchema), `"`+required+`"`) {
-			t.Fatalf("execute schema missing %q: %s", required, commandSchema)
+	for _, field := range []string{"remote_session_id", "purpose"} {
+		if !strings.Contains(string(commandSchema), `"`+field+`"`) {
+			t.Fatalf("execute schema missing %q: %s", field, commandSchema)
 		}
+	}
+	var commandSchemaMap map[string]any
+	if err := json.Unmarshal(commandSchema, &commandSchemaMap); err != nil {
+		t.Fatal(err)
+	}
+	if containsSchemaRequired(commandSchemaMap["required"].([]any), "remote_session_id") {
+		t.Fatalf("execute remote_session_id must be optional when transport is bound: %s", commandSchema)
 	}
 	if strings.Contains(string(commandSchema), `"scope"`) {
 		t.Fatalf("execute schema must not expose single-value scope: %s", commandSchema)
@@ -723,13 +736,13 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		t.Fatalf("batch results: %+v", batchData)
 	}
 	okCount, failCount := 0, 0
-	var demoSHA string
+	var demoRev string
 	for _, raw := range results {
 		item, _ := raw.(map[string]any)
 		if item["ok"] == true {
 			okCount++
 			if item["path"] == "a.go" {
-				demoSHA, _ = item["sha256"].(string)
+				demoRev, _ = item["rev"].(string)
 			}
 		} else {
 			failCount++
@@ -741,8 +754,8 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	// Consistency with single file_read
 	single := call("file_read", map[string]any{"remote_session_id": remoteID, "path": "a.go", "offset": 0, "limit": 20})
 	singleData, _ := single["data"].(map[string]any)
-	if singleData["sha256"] != demoSHA {
-		t.Fatalf("batch sha %q != single %q", demoSHA, singleData["sha256"])
+	if singleData["rev"] != demoRev || demoRev == "" {
+		t.Fatalf("batch rev %q != single %q", demoRev, singleData["rev"])
 	}
 
 	// --- A08 code_search context ---
@@ -759,8 +772,8 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		t.Fatalf("search missed Alpha: %+v", searchData)
 	}
 	match0, _ := matches[0].(map[string]any)
-	if match0["sha256"] == nil || match0["sha256"] == "" {
-		t.Fatalf("search missing sha256: %+v", match0)
+	if match0["rev"] == nil || match0["rev"] == "" || match0["sha256"] != nil {
+		t.Fatalf("search missing compact rev or leaking sha256: %+v", match0)
 	}
 	scopedQuery := call("context_query", map[string]any{
 		"action": "query", "remote_session_id": remoteID,

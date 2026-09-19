@@ -187,8 +187,8 @@ func TestCleanCoreEditAppliesIdempotentlyAndReportsStale(t *testing.T) {
 	if statusOK(stale) || errorCode(stale) != "stale_revision" {
 		t.Fatalf("stale response=%+v", stale)
 	}
-	if details, _ := stale["error"].(map[string]any)["details"].(map[string]any); details["current_sha256"] == nil {
-		t.Fatalf("stale response missing current sha: %+v", stale)
+	if details, _ := stale["error"].(map[string]any)["details"].(map[string]any); details["current_rev"] == nil || details["current_sha256"] != nil {
+		t.Fatalf("stale response missing compact current_rev or leaking sha256: %+v", stale)
 	}
 }
 
@@ -400,11 +400,14 @@ func TestCleanCoreUTF16ReadEditRoundTripPreservesRawBytes(t *testing.T) {
 	if item["content"] != logical || item["encoding"] != "utf-8" {
 		t.Fatalf("decoded UTF-16 payload=%+v", item)
 	}
-	baseSHA, _ := item["sha256"].(string)
+	rev, _ := item["rev"].(string)
+	if rev == "" || item["sha256"] != nil {
+		t.Fatalf("UTF-16 read must return compact rev only: %+v", item)
+	}
 	response := callEnvelope(t, rt.toolEdit, context.Background(), map[string]any{
 		"remote_session_id": remoteID, "purpose": "update UTF-16 text", "idempotency_key": "utf16-roundtrip-1",
 		"edits": []map[string]any{{
-			"path": "utf16-edit.txt", "operation": "update", "base_sha256": baseSHA,
+			"path": "utf16-edit.txt", "operation": "update", "rev": rev,
 			"replacements": []map[string]any{{"match": "第三行", "replacement": "第三行-已改"}},
 		}},
 	})
@@ -419,8 +422,8 @@ func TestCleanCoreUTF16ReadEditRoundTripPreservesRawBytes(t *testing.T) {
 	if string(updated) != string(want) {
 		t.Fatalf("UTF-16 raw bytes changed unexpectedly: got %x want %x", updated, want)
 	}
-	if digestForTest(updated) == baseSHA {
-		t.Fatal("UTF-16 edit did not change raw SHA")
+	if compactFileRevision(digestForTest(updated)) == rev {
+		t.Fatal("UTF-16 edit did not advance compact revision")
 	}
 }
 
