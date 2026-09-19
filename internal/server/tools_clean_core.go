@@ -22,13 +22,13 @@ var cleanEditSafetyMeta = mcp.Meta{
 		"approval":          "web_model_user_confirmation_required_for_move_out",
 		"scope":             "registered_workspace_root",
 		"target":            "regular_files_only_for_create_update_rename",
-		"revision_guard":    "sha256",
+		"revision_guard":    "compact_rev",
 		"symlink_policy":    "reject",
 		"idempotency":       "supported",
 		"audit":             "durable",
 		"execution":         "filesystem_only",
 		"shell_bypass":      "forbidden",
-		"approval_evidence": []string{"purpose", "explicit_paths", "base_sha256", "server_snapshot"},
+		"approval_evidence": []string{"purpose", "explicit_paths", "rev", "server_snapshot"},
 		"server_rejections": []string{"path_escape", "symlink", "non_regular_file", "stale_revision", "file_policy_denied", "move_out_required"},
 	},
 }
@@ -209,8 +209,7 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"properties": map[string]any{
 			"path":           path,
 			"operation":      enumSchema("文件操作；用户提出删除、移除或清理时请使用 move_out(action=prepare)，确认后再 move_out(action=submit)", "create", "update", "rename"),
-			"rev":            stringSchema("update/rename 首选；read 返回的 compact file revision"),
-			"base_sha256":    stringSchema("兼容旧客户端的完整 SHA-256 revision guard；新调用优先使用 rev"),
+			"rev":            stringSchema("update/rename 必须；read 返回的 80-bit base64url file revision"),
 			"content":        stringSchema("新文件的完整内容"),
 			"content_base64": stringSchema("完整目标字节的标准 Base64；仅 create/update，须 newline_policy=exact，与 content/replacements/range 互斥"),
 			"newline_policy": enumSchema("preserve 使用现有逻辑文本编辑；exact 原样写入 content_base64 字节，不转换编码/BOM/换行", "preserve", "exact"),
@@ -236,7 +235,7 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 			"range": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
-				"description":          "按逻辑行替换 update 范围；start_line/end_line 为 1-based 且包含首尾行，空 replacement 删除这些完整行。必须提供 base_sha256；与 content/replacements 互斥。",
+				"description":          "按逻辑行替换 update 范围；start_line/end_line 为 1-based 且包含首尾行，空 replacement 删除这些完整行。必须提供 rev；与 content/replacements 互斥。",
 				"properties": map[string]any{
 					"start_line":  map[string]any{"type": "integer", "minimum": 1, "description": "起始逻辑行（1-based，包含）"},
 					"end_line":    map[string]any{"type": "integer", "minimum": 1, "description": "结束逻辑行（1-based，包含）"},
@@ -248,7 +247,7 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 		"required": []string{"path", "operation"},
 		"allOf": []map[string]any{{
 			"if":   map[string]any{"properties": map[string]any{"operation": map[string]any{"enum": []string{"update", "rename"}}}},
-			"then": map[string]any{"anyOf": []map[string]any{{"required": []string{"rev"}}, {"required": []string{"base_sha256"}}}},
+			"then": map[string]any{"required": []string{"rev"}},
 		}},
 	}
 	r.addTool(s, cleanCoreTool("edit", desc["edit"], map[string]any{

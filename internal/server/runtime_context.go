@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,6 +33,8 @@ type runtimeContextKey struct{}
 type toolInvocationNameKey struct{}
 type operationChildKey struct{}
 type cleanCoreRequestKey struct{}
+
+var opaqueIDFallbackCounter atomic.Uint64
 
 // RuntimeContext is server-owned lifecycle metadata. Identity and trace fields
 // come from the Gateway; instrumentTool overrides StartedAtMs from the required
@@ -142,10 +146,13 @@ func newRuntimeID(prefix string, bytes int) string {
 
 func newOpaqueID(prefix string, bytes int) string {
 	raw := make([]byte, bytes)
-	if _, err := rand.Read(raw); err != nil {
-		return prefix + "_unavailable"
+	if _, err := rand.Read(raw); err == nil {
+		return prefix + "_" + base64.RawURLEncoding.EncodeToString(raw)
 	}
-	return prefix + "_" + base64.RawURLEncoding.EncodeToString(raw)
+	fallback := make([]byte, 16)
+	binary.BigEndian.PutUint64(fallback[:8], uint64(time.Now().UnixNano()))
+	binary.BigEndian.PutUint64(fallback[8:], opaqueIDFallbackCounter.Add(1))
+	return prefix + "_" + base64.RawURLEncoding.EncodeToString(fallback)
 }
 
 func runtimeContextWithClient(value RuntimeContext, name, version string) RuntimeContext {

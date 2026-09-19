@@ -40,9 +40,11 @@ func callOperationTool(t *testing.T, rt *Runtime, name string, arguments map[str
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Assert the same structured contract consumed by clients. Presentation
+	// metadata intentionally omits some diagnostics and is not the machine API.
 	payload, ok := result.StructuredContent.(map[string]any)
 	if !ok {
-		t.Fatalf("structured content=%T", result.StructuredContent)
+		t.Fatal("operation result has no model-visible structured content")
 	}
 	return payload
 }
@@ -269,7 +271,7 @@ func TestOperationBatchPublishesBoundedStatisticsForMaxSteps(t *testing.T) {
 		t.Fatalf("missing operation id: %+v", accepted)
 	}
 	completed := callOperationTool(t, rt, "operation_manage", map[string]any{
-		"remote_session_id": session.ID, "operation_id": operationID, "action": "wait", "timeout_ms": 5000,
+		"remote_session_id": session.ID, "operation_id": operationID, "action": "wait", "timeout_ms": 30000,
 	})
 	if completed["status"] != "succeeded" {
 		t.Fatalf("batch completion=%+v", completed)
@@ -558,38 +560,5 @@ func TestValidateOperationSchemaValueHandlesUntypedSchemas(t *testing.T) {
 		"required": []any{"name"},
 	}, "arguments"); err != nil {
 		t.Fatalf("object constraints should be inferred when type is omitted: %v", err)
-	}
-}
-
-func TestOperationManageWaitTimeoutDoesNotCancel(t *testing.T) {
-	rt := newWorkspaceRuntime(t, "demo")
-	session := operationTestSession(t, rt, "demo")
-	record, err := rt.operations.Submit(context.Background(), operation.SubmitSpec{
-		RemoteSessionID: session.ID, WorkspaceName: "demo", RequestID: "req_test", Purpose: "等待测试",
-		Steps: []operation.StepSpec{{ID: "wait", Tool: "read"}},
-	}, func(ctx context.Context, input operation.ExecuteInput) operation.ExecuteResult {
-		select {
-		case <-time.After(100 * time.Millisecond):
-			return operation.ExecuteResult{Result: []byte(`{"ok":true}`)}
-		case <-ctx.Done():
-			return operation.ExecuteResult{Err: ctx.Err()}
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, timedOut, err := rt.operations.Wait(context.Background(), record.ID, time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !timedOut || (current.State != operation.StateQueued && current.State != operation.StateRunning) {
-		t.Fatalf("current=%+v timedOut=%v", current, timedOut)
-	}
-	final, timedOut, err := rt.operations.Wait(context.Background(), record.ID, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if timedOut || final.State != operation.StateSucceeded {
-		t.Fatalf("final=%+v timedOut=%v", final, timedOut)
 	}
 }

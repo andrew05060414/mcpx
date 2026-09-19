@@ -158,6 +158,11 @@ CI 会构建带 provenance 的二进制并通过 `mcpx -version` 校验 commit/d
 ./bin/mcpx workspace register /path/to/your/project
 ```
 
+服务启动时会校验每个已注册 Workspace 的根路径。若父目录尚不可用（例如外置
+磁盘还未挂载），启动会等待该路径出现；等待超时后仍会保留注册并记录 warning，
+不会把临时不可用当成已删除。父目录存在但目标目录已消失或不是目录的条目会被
+从 `config.yaml` 中移除，因此已删除的 disposable worktree 不需要手工清理。
+
 然后启动服务：
 
 ```bash

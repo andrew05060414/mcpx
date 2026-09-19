@@ -197,10 +197,10 @@ func TestCleanCorePlanEvidenceAndArtifactWorkflow(t *testing.T) {
 		t.Fatalf("plan advance=%+v", advanced)
 	}
 
-	base := digestForTest([]byte("before\n"))
+	base := compactFileRevision(digestForTest([]byte("before\n")))
 	edited := callEnvelope(t, rt.toolEdit, context.Background(), map[string]any{
 		"remote_session_id": remoteID, "purpose": "apply the tracked edit", "idempotency_key": "plan-edit-1",
-		"edits": []any{map[string]any{"path": "plan.txt", "operation": "update", "base_sha256": base,
+		"edits": []any{map[string]any{"path": "plan.txt", "operation": "update", "rev": base,
 			"replacements": []any{map[string]any{"match": "before", "replacement": "after"}}}},
 	})
 	if !statusOK(edited) {

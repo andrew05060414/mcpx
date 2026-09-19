@@ -40,11 +40,13 @@ func TestExecuteWorkspaceIdentityBindsNestedTargetAndRejectsDrift(t *testing.T) 
 		t.Fatalf("冻结目标无法执行: %s", errorCode(result))
 	}
 	git("show-ref", "--verify", "refs/heads/candidate")
-	reportedCWD, _ := result["data"].(map[string]any)["working_directory"].(string)
-	reportedInfo, reportedErr := os.Stat(reportedCWD)
-	targetInfo, targetErr := os.Stat(target)
-	if reportedErr != nil || targetErr != nil || !os.SameFile(reportedInfo, targetInfo) {
-		t.Fatalf("未使用目标 cwd: got=%q want=%q reportedErr=%v targetErr=%v", reportedCWD, target, reportedErr, targetErr)
+	// 目标可能位于符号链接之下（如 macOS 的 /var），身份快照记录的是物理路径。
+	physicalTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["data"].(map[string]any)["working_directory"] != physicalTarget {
+		t.Fatal("未使用目标 cwd")
 	}
 	for _, override := range [][]any{
 		{"git", "-C", session.WorkspacePath, "branch", "escaped"},

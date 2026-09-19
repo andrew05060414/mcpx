@@ -3,10 +3,8 @@ package remotesession
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +20,6 @@ var (
 	ErrNotFound     = errors.New("remote session not found")
 	ErrForbidden    = errors.New("remote session access denied")
 	ErrConflict     = errors.New("remote session version conflict")
-	ErrInvalidToken = errors.New("invalid or expired handoff token")
 	ErrInvalidInput = errors.New("invalid remote session request")
 )
 
@@ -93,12 +90,10 @@ type CreateInput struct {
 }
 
 type CreateResult struct {
-	Session                  Session   `json:"session"`
-	ResumeToken              string    `json:"resume_token,omitempty"`
-	ExpiresAt                time.Time `json:"resume_token_expires_at"`
-	ResumeTokenAlreadyIssued bool      `json:"resume_token_already_issued,omitempty"`
-	EnvironmentSnapshotID    string    `json:"environment_snapshot_id,omitempty"`
-	EnvironmentStaticDigest  string    `json:"environment_static_digest,omitempty"`
+	Session                 Session `json:"session"`
+	Replayed                bool    `json:"replayed,omitempty"`
+	EnvironmentSnapshotID   string  `json:"environment_snapshot_id,omitempty"`
+	EnvironmentStaticDigest string  `json:"environment_static_digest,omitempty"`
 }
 
 type ListInput struct {
@@ -133,12 +128,6 @@ type EventsInput struct {
 	Limit         int
 }
 
-type HandoffResult struct {
-	HandoffToken string    `json:"handoff_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	Role         string    `json:"role"`
-}
-
 func (s *Service) Create(ctx context.Context, principal auth.Principal, in CreateInput) (CreateResult, error) {
 	if strings.TrimSpace(in.WorkspaceName) == "" || strings.TrimSpace(in.WorkspacePath) == "" {
 		return CreateResult{}, fmt.Errorf("%w: workspace required", ErrInvalidInput)
@@ -163,8 +152,7 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, in Creat
 		if err == nil {
 			var result CreateResult
 			if json.Unmarshal([]byte(cached), &result) == nil {
-				result.ResumeToken = ""
-				result.ResumeTokenAlreadyIssued = true
+				result.Replayed = true
 				return result, nil
 			}
 		} else if !errors.Is(err, sql.ErrNoRows) {
@@ -176,15 +164,6 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, in Creat
 	if err != nil {
 		return CreateResult{}, err
 	}
-	handoffID, err := randomID("rsh_", 12)
-	if err != nil {
-		return CreateResult{}, err
-	}
-	resumeToken, err := randomToken("rsrt_", 32)
-	if err != nil {
-		return CreateResult{}, err
-	}
-	expiresAt := now.Add(24 * time.Hour)
 	session := Session{
 		ID: sessionID, WorkspaceName: in.WorkspaceName, WorkspacePath: in.WorkspacePath,
 		Label: in.Label, Description: in.Description, Status: "active",
@@ -207,26 +186,18 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, in Creat
 	if err := recordClientTx(ctx, tx, session.ID, principal.ID, in.ClientName, in.ClientVersion, now); err != nil {
 		return CreateResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO remote_session_handoffs
-        (id, remote_session_id, token_hash, role, created_by, note, created_at, expires_at)
-        VALUES (?, ?, ?, 'editor', ?, 'initial resume token', ?, ?)`,
-		handoffID, session.ID, tokenDigest(resumeToken), principal.ID, now.UnixMilli(), expiresAt.UnixMilli()); err != nil {
-		return CreateResult{}, err
-	}
 	createdEvent := Event{RemoteSessionID: session.ID, PrincipalID: principal.ID, ClientName: in.ClientName, Type: "remote_session.created", Summary: session.Label, CreatedAt: now}
 	sequence, err := insertEventTx(ctx, tx, createdEvent)
 	if err != nil {
 		return CreateResult{}, err
 	}
 	createdEvent.Sequence = sequence
-	result := CreateResult{Session: session, ResumeToken: resumeToken, ExpiresAt: expiresAt}
+	result := CreateResult{Session: session}
 	if in.ClientRequestID != "" {
-		// Idempotency records deliberately exclude the one-time resume token.
-		// A retry returns the original session and tells the caller that the
-		// credential was already issued in the first response.
+		// A retry returns the original session and reports that the response
+		// came from the idempotency record instead of a new create.
 		cachedResult := result
-		cachedResult.ResumeToken = ""
-		cachedResult.ResumeTokenAlreadyIssued = true
+		cachedResult.Replayed = true
 		encoded, _ := json.Marshal(cachedResult)
 		_, err = tx.ExecContext(ctx, `INSERT INTO idempotency_records
             (remote_session_id, principal_id, client_request_id, operation, response_json, created_at, expires_at)
@@ -351,102 +322,6 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, sessionI
 	_ = s.AddEvent(ctx, principal, Event{RemoteSessionID: sessionID, Type: "remote_session.updated", Summary: label, CreatedAt: now})
 	return s.Get(ctx, principal, sessionID)
 }
-
-func (s *Service) Handoff(ctx context.Context, principal auth.Principal, sessionID, role, note string, ttl time.Duration) (HandoffResult, error) {
-	current, err := s.Get(ctx, principal, sessionID)
-	if err != nil {
-		return HandoffResult{}, err
-	}
-	if current.Role != "owner" {
-		return HandoffResult{}, ErrForbidden
-	}
-	if role != "viewer" && role != "editor" && role != "approver" {
-		return HandoffResult{}, fmt.Errorf("%w: invalid handoff role", ErrInvalidInput)
-	}
-	if ttl <= 0 || ttl > 24*time.Hour {
-		ttl = 10 * time.Minute
-	}
-	token, err := randomToken("rsho_", 32)
-	if err != nil {
-		return HandoffResult{}, err
-	}
-	id, err := randomID("rsh_", 12)
-	if err != nil {
-		return HandoffResult{}, err
-	}
-	now := s.now().UTC()
-	expires := now.Add(ttl)
-	_, err = s.db.ExecContext(ctx, `INSERT INTO remote_session_handoffs
-        (id, remote_session_id, token_hash, role, created_by, note, created_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, sessionID, tokenDigest(token), role, principal.ID, note, now.UnixMilli(), expires.UnixMilli())
-	if err != nil {
-		return HandoffResult{}, err
-	}
-	_ = s.AddEvent(ctx, principal, Event{RemoteSessionID: sessionID, Type: "remote_session.handoff_created", Summary: "handoff role " + role, CreatedAt: now})
-	return HandoffResult{HandoffToken: token, ExpiresAt: expires, Role: role}, nil
-}
-
-func (s *Service) Attach(ctx context.Context, principal auth.Principal, token, clientName, clientVersion string) (Session, error) {
-	now := s.now().UTC()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Session{}, err
-	}
-	defer tx.Rollback()
-	if err := upsertPrincipal(ctx, tx, principal, now); err != nil {
-		return Session{}, err
-	}
-	var sessionID, role string
-	err = tx.QueryRowContext(ctx, `SELECT remote_session_id, role FROM remote_session_handoffs
-        WHERE token_hash = ? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
-		tokenDigest(token), now.UnixMilli()).Scan(&sessionID, &role)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, ErrInvalidToken
-	}
-	if err != nil {
-		return Session{}, err
-	}
-	res, err := tx.ExecContext(ctx, `UPDATE remote_session_handoffs SET consumed_at = ?, consumed_by = ?
-        WHERE token_hash = ? AND consumed_at IS NULL`, now.UnixMilli(), principal.ID, tokenDigest(token))
-	if err != nil {
-		return Session{}, err
-	}
-	rows, _ := res.RowsAffected()
-	if rows != 1 {
-		return Session{}, ErrInvalidToken
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO remote_session_members
-        (remote_session_id, principal_id, role, joined_at, last_active_at) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(remote_session_id, principal_id) DO UPDATE SET
-          role = CASE
-            WHEN remote_session_members.role = 'owner' THEN 'owner'
-            WHEN excluded.role = 'approver' THEN 'approver'
-            WHEN excluded.role = 'editor' AND remote_session_members.role = 'viewer' THEN 'editor'
-            ELSE remote_session_members.role END,
-          last_active_at = excluded.last_active_at`,
-		sessionID, principal.ID, role, now.UnixMilli(), now.UnixMilli()); err != nil {
-		return Session{}, err
-	}
-	if err := recordClientTx(ctx, tx, sessionID, principal.ID, clientName, clientVersion, now); err != nil {
-		return Session{}, err
-	}
-	attachedEvent := Event{RemoteSessionID: sessionID, PrincipalID: principal.ID, ClientName: clientName, Type: "remote_session.attached", Summary: "attached as " + role, CreatedAt: now}
-	sequence, err := insertEventTx(ctx, tx, attachedEvent)
-	if err != nil {
-		return Session{}, err
-	}
-	attachedEvent.Sequence = sequence
-	if err := tx.Commit(); err != nil {
-		return Session{}, err
-	}
-	session, err := s.Get(ctx, principal, sessionID)
-	if err != nil {
-		return Session{}, err
-	}
-	s.notifyEvent(session, attachedEvent)
-	return session, nil
-}
-
 func (s *Service) Close(ctx context.Context, principal auth.Principal, sessionID, status string) (Session, error) {
 	current, err := s.Get(ctx, principal, sessionID)
 	if err != nil {
@@ -663,21 +538,12 @@ func placeholders(count int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", count), ",")
 }
 
-func tokenDigest(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
 func randomID(prefix string, size int) (string, error) {
-	var b = make([]byte, size)
+	b := make([]byte, size)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	return prefix + base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-func randomToken(prefix string, size int) (string, error) {
-	return randomID(prefix, size)
 }
 
 func encodeCursor(at int64, id string) string {

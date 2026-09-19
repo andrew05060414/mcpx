@@ -2,9 +2,9 @@ package server
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"math/big"
 	"os"
 	"strings"
 
@@ -12,21 +12,19 @@ import (
 	"mcpx/internal/file"
 )
 
-const compactFileRevisionHexChars = 20 // 80 bits; model-facing only.
+const compactFileRevisionBytes = 10 // 80 bits; model-facing only.
 
 func compactFileRevision(fullSHA string) string {
 	value := strings.ToLower(strings.TrimSpace(fullSHA))
 	value = strings.TrimPrefix(value, "sha256:")
-	if len(value) < compactFileRevisionHexChars {
+	if len(value) < compactFileRevisionBytes*2 {
 		return ""
 	}
-	raw, err := hex.DecodeString(value[:compactFileRevisionHexChars])
+	raw, err := hex.DecodeString(value[:compactFileRevisionBytes*2])
 	if err != nil {
 		return ""
 	}
-	var n big.Int
-	n.SetBytes(raw)
-	return n.String()
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 func sourceFileSHA256(content []byte) string {
@@ -73,10 +71,6 @@ func resolveEditRevisions(workspaceRoot string, edits []edit.FileEdit) error {
 			continue
 		}
 		rev := strings.TrimSpace(edits[i].Revision)
-		base := strings.TrimSpace(edits[i].BaseSHA256)
-		if rev != "" && base != "" {
-			return &edit.ApplyError{Code: "INVALID_INPUT", Message: "rev and base_sha256 are mutually exclusive", Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
-		}
 		if rev == "" {
 			continue
 		}

@@ -92,31 +92,15 @@ func (r *Runtime) toolEdit(ctx context.Context, req *mcp.CallToolRequest) (*mcp.
 			}
 		}
 	}
-	if err := resolveEditRevisions(session.WorkspacePath, edits); err != nil {
-		return r.editToolError(envReq, session, err)
-	}
-
 	idempotencyKey := strings.TrimSpace(stringPayload(envReq.Payload, "idempotency_key"))
 	fingerprint := cleanEditFingerprint(envReq, edits)
 	apply := true
 	if value, exists := envReq.Payload["apply"].(bool); exists {
 		apply = value
 	}
-	if !apply {
-		result, dryRunErr := edit.ApplyBatch(edit.BatchRequest{WorkspaceRoot: session.WorkspacePath, Edits: edits, DryRun: true, ValidatePath: validatePath})
-		if dryRunErr != nil {
-			return r.editToolError(envReq, session, dryRunErr)
-		}
-		data := editResponseData(session.ID, "", result, false)
-		data["applied"] = false
-		data["apply"] = false
-		data["preview_only"] = true
-		data["remote_session_id"] = session.ID
-		return r.remoteResult(envReq, session.ID, session.WorkspaceName, data)
-	}
 	var idemKey idempotency.Key
 	var claim idempotency.Claim
-	claimed := idempotencyKey != "" && r.idempotency != nil
+	claimed := apply && idempotencyKey != "" && r.idempotency != nil
 	if claimed {
 		idemKey = idempotency.Key{RemoteSessionID: session.ID, PrincipalID: principal.ID, Operation: cleanEditIdempotencyOperation, Value: idempotencyKey}
 		var claimErr error
@@ -148,6 +132,27 @@ func (r *Runtime) toolEdit(ctx context.Context, req *mcp.CallToolRequest) (*mcp.
 				return reconciled, nil
 			}
 		}
+	}
+
+	if err := resolveEditRevisions(session.WorkspacePath, edits); err != nil {
+		if claimed && claim.Kind == idempotency.ClaimOwner {
+			stored := storedEditResult{Error: storedApplyError(err)}
+			encoded, _ := json.Marshal(stored)
+			_ = r.idempotency.Complete(ctx, idemKey, fingerprint, idempotency.StateFailed, encoded, nil)
+		}
+		return r.editToolError(envReq, session, err)
+	}
+	if !apply {
+		result, dryRunErr := edit.ApplyBatch(edit.BatchRequest{WorkspaceRoot: session.WorkspacePath, Edits: edits, DryRun: true, ValidatePath: validatePath})
+		if dryRunErr != nil {
+			return r.editToolError(envReq, session, dryRunErr)
+		}
+		data := editResponseData(session.ID, "", result, false)
+		data["applied"] = false
+		data["apply"] = false
+		data["preview_only"] = true
+		data["remote_session_id"] = session.ID
+		return r.remoteResult(envReq, session.ID, session.WorkspaceName, data)
 	}
 
 	editID := newOpaqueID("edit", 12)
@@ -424,14 +429,12 @@ func parseCleanEdits(payload map[string]any) ([]edit.FileEdit, error) {
 		if strings.TrimSpace(edits[i].Operation) == "" {
 			return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].operation required", i), Index: i, Err: edit.ErrInvalidInput}
 		}
+		if strings.TrimSpace(edits[i].BaseSHA256) != "" {
+			return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].base_sha256 is not supported; use rev from read", i), Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
+		}
 		if strings.TrimSpace(edits[i].Operation) == edit.OpUpdate || strings.TrimSpace(edits[i].Operation) == edit.OpRename {
-			rev := strings.TrimSpace(edits[i].Revision)
-			base := strings.TrimSpace(edits[i].BaseSHA256)
-			if rev == "" && base == "" {
-				return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].rev required for update/rename (legacy base_sha256 also accepted)", i), Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
-			}
-			if rev != "" && base != "" {
-				return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].rev and base_sha256 are mutually exclusive", i), Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
+			if strings.TrimSpace(edits[i].Revision) == "" {
+				return nil, &edit.ApplyError{Code: "INVALID_INPUT", Message: fmt.Sprintf("edits[%d].rev required for update/rename", i), Path: edits[i].Path, Index: i, Err: edit.ErrInvalidInput}
 			}
 		}
 	}

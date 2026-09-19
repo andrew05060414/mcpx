@@ -279,10 +279,13 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	schemaText := string(schemaJSON)
-	for _, needle := range []string{"remote_session_id", "base_sha256", "content", "replacements", "edits"} {
+	for _, needle := range []string{"remote_session_id", "rev", "content", "replacements", "edits"} {
 		if !strings.Contains(schemaText, needle) {
 			t.Fatalf("edit schema missing %q: %s", needle, schemaText)
 		}
+	}
+	if strings.Contains(schemaText, "base_sha256") {
+		t.Fatalf("edit schema must not expose legacy base_sha256: %s", schemaText)
 	}
 	if !strings.Contains(schemaText, "update") || !strings.Contains(schemaText, "create") || !strings.Contains(schemaText, "rename") || strings.Contains(schemaText, "user_confirmed") || strings.Contains(schemaText, "\"delete\"") {
 		t.Fatalf("edit operation enum incomplete: %s", schemaText)
@@ -846,13 +849,13 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 
 	// --- A10/A13 clean edit + inline diff summary ---
 	sum := sha256.Sum256([]byte(files["demo.go"]))
-	base := fmt.Sprintf("sha256:%x", sum[:])
+	base := compactFileRevision(fmt.Sprintf("sha256:%x", sum[:]))
 	executed := call("edit", map[string]any{
 		"remote_session_id": remoteID,
 		"idempotency_key":   "edit-idempotency-key",
 		"purpose":           "bump Value",
 		"edits": []any{map[string]any{
-			"operation": "update", "path": "demo.go", "base_sha256": base,
+			"operation": "update", "path": "demo.go", "rev": base,
 			"replacements": []any{map[string]any{"match": "const Value = 1", "replacement": "const Value = 2"}},
 		}},
 	})
@@ -883,7 +886,7 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	}
 	replayed := call("edit", map[string]any{
 		"remote_session_id": remoteID, "idempotency_key": "edit-idempotency-key", "purpose": "bump Value",
-		"edits": []any{map[string]any{"operation": "update", "path": "demo.go", "base_sha256": base,
+		"edits": []any{map[string]any{"operation": "update", "path": "demo.go", "rev": base,
 			"replacements": []any{map[string]any{"match": "const Value = 1", "replacement": "const Value = 2"}}}},
 	})
 	replayData, _ := replayed["data"].(map[string]any)
@@ -896,7 +899,7 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 	stale := call("edit", map[string]any{
 		"remote_session_id": remoteID, "purpose": "stale",
 		"edits": []any{map[string]any{
-			"operation": "update", "path": "demo.go", "base_sha256": base, // old hash
+			"operation": "update", "path": "demo.go", "rev": base, // old revision
 			"replacements": []any{map[string]any{"match": "const Value = 2", "replacement": "const Value = 3"}},
 		}},
 	})
@@ -916,11 +919,11 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 
 	// --- A11 zero match fails ---
 	freshSum := sha256.Sum256(content)
-	freshBase := fmt.Sprintf("sha256:%x", freshSum[:])
+	freshBase := compactFileRevision(fmt.Sprintf("sha256:%x", freshSum[:]))
 	nomatch := call("edit", map[string]any{
 		"remote_session_id": remoteID, "purpose": "no match", "apply": false,
 		"edits": []any{map[string]any{
-			"operation": "update", "path": "demo.go", "base_sha256": freshBase,
+			"operation": "update", "path": "demo.go", "rev": freshBase,
 			"replacements": []any{map[string]any{"match": "DOES_NOT_EXIST_XYZ", "replacement": "x"}},
 		}},
 	})

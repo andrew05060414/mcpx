@@ -138,9 +138,9 @@ func TestCleanCoreEditAppliesIdempotentlyAndReportsStale(t *testing.T) {
 		"purpose":           "update the file labels",
 		"idempotency_key":   "edit-test-1",
 		"edits": []map[string]any{{
-			"path":        "edit.txt",
-			"operation":   "update",
-			"base_sha256": digestForTest(original),
+			"path":      "edit.txt",
+			"operation": "update",
+			"rev":       compactFileRevision(digestForTest(original)),
 			"replacements": []map[string]any{
 				{"match": "title: old", "replacement": "title: new"},
 				{"match": "color: red", "replacement": "color: blue"},
@@ -180,7 +180,7 @@ func TestCleanCoreEditAppliesIdempotentlyAndReportsStale(t *testing.T) {
 		"remote_session_id": remoteID,
 		"purpose":           "test stale revision",
 		"edits": []map[string]any{{
-			"path": "edit.txt", "operation": "update", "base_sha256": "sha256:stale",
+			"path": "edit.txt", "operation": "update", "rev": compactFileRevision(digestForTest([]byte("stale"))),
 			"replacements": []map[string]any{{"match": "title: new", "replacement": "title: newest"}},
 		}},
 	})
@@ -244,7 +244,7 @@ func TestCleanCoreEditUsesContextualDiffForSmallChangeInLargeFile(t *testing.T) 
 		"purpose":           "preview one line in a large file",
 		"apply":             false,
 		"edits": []map[string]any{{
-			"path": "large-small-change.txt", "operation": "update", "base_sha256": digestForTest([]byte(old)),
+			"path": "large-small-change.txt", "operation": "update", "rev": compactFileRevision(digestForTest([]byte(old))),
 			"replacements": []map[string]any{{"match": "line-400", "replacement": "line-400 changed"}},
 		}},
 	})
@@ -286,7 +286,7 @@ func TestCleanCoreEditBoundsLargeDiffAndPaginatesFullDiff(t *testing.T) {
 		"purpose":           "replace a large generated block",
 		"idempotency_key":   "large-diff-1",
 		"edits": []map[string]any{{
-			"path": "large.txt", "operation": "update", "base_sha256": digestForTest([]byte(old)), "content": updated,
+			"path": "large.txt", "operation": "update", "rev": compactFileRevision(digestForTest([]byte(old))), "content": updated,
 		}},
 	})
 	if !statusOK(response) {
@@ -360,17 +360,17 @@ func TestCleanCoreEditRejectsIdempotencyFingerprintConflict(t *testing.T) {
 	}
 	opened := callEnvelope(t, rt.toolSession, context.Background(), map[string]any{"action": "open", "workspace": "demo"})
 	remoteID := opened["remote_session_id"].(string)
-	base := digestForTest(original)
+	base := compactFileRevision(digestForTest(original))
 	first := map[string]any{
 		"remote_session_id": remoteID, "purpose": "first", "idempotency_key": "same-key",
-		"edits": []map[string]any{{"path": "conflict.txt", "operation": "update", "base_sha256": base, "replacements": []map[string]any{{"match": "old", "replacement": "new"}}}},
+		"edits": []map[string]any{{"path": "conflict.txt", "operation": "update", "rev": base, "replacements": []map[string]any{{"match": "old", "replacement": "new"}}}},
 	}
 	if response := callEnvelope(t, rt.toolEdit, context.Background(), first); !statusOK(response) {
 		t.Fatalf("first edit failed: %+v", response)
 	}
 	conflict := map[string]any{
 		"remote_session_id": remoteID, "purpose": "different", "idempotency_key": "same-key",
-		"edits": []map[string]any{{"path": "conflict.txt", "operation": "update", "base_sha256": base, "replacements": []map[string]any{{"match": "old", "replacement": "other"}}}},
+		"edits": []map[string]any{{"path": "conflict.txt", "operation": "update", "rev": base, "replacements": []map[string]any{{"match": "old", "replacement": "other"}}}},
 	}
 	response := callEnvelope(t, rt.toolEdit, context.Background(), conflict)
 	if statusOK(response) || errorCode(response) != "idempotency_conflict" {
@@ -456,7 +456,7 @@ func TestCleanEditApplyFalseNeverMutatesFilesystem(t *testing.T) {
 		"purpose":           "preview a change without applying it",
 		"apply":             false,
 		"edits": []any{map[string]any{
-			"path": "dry-run.txt", "operation": "update", "base_sha256": digestForTest(original),
+			"path": "dry-run.txt", "operation": "update", "rev": compactFileRevision(digestForTest(original)),
 			"replacements": []any{map[string]any{"match": "before", "replacement": "after"}},
 		}},
 	})
@@ -477,7 +477,7 @@ func TestCleanEditApplyFalseNeverMutatesFilesystem(t *testing.T) {
 	deletePreview := callEnvelope(t, rt.toolEdit, context.Background(), map[string]any{
 		"remote_session_id": remoteID, "purpose": "ensure delete preview cannot mutate",
 		"apply": false,
-		"edits": []any{map[string]any{"path": "dry-run.txt", "operation": "delete", "base_sha256": digestForTest(original)}},
+		"edits": []any{map[string]any{"path": "dry-run.txt", "operation": "delete"}},
 	})
 	if statusOK(deletePreview) || errorCode(deletePreview) != "move_out_required" {
 		t.Fatalf("edit delete must route to move_out(action=prepare): %+v", deletePreview)

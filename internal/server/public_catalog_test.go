@@ -266,10 +266,13 @@ func TestPublicCatalogIsExactlyTheCleanCoreContract(t *testing.T) {
 	editItems, _ := editProperties["edits"].(map[string]any)
 	itemSchema, _ := editItems["items"].(map[string]any)
 	itemProperties, _ := itemSchema["properties"].(map[string]any)
-	for _, field := range []string{"operation", "path", "base_sha256", "content", "new_path", "replacements", "range"} {
+	for _, field := range []string{"operation", "path", "rev", "content", "new_path", "replacements", "range"} {
 		if itemProperties[field] == nil {
 			t.Fatalf("edit item missing %q: %s", field, mcpresult.ToolSchemaJSON(editTool))
 		}
+	}
+	if itemProperties["base_sha256"] != nil {
+		t.Fatalf("edit item must not expose legacy base_sha256: %s", mcpresult.ToolSchemaJSON(editTool))
 	}
 	moveOutTool := runtime.listedToolMap()["move_out"]
 	if moveOutTool.Annotations == nil || moveOutTool.Annotations.ReadOnlyHint || moveOutTool.Annotations.DestructiveHint == nil || !*moveOutTool.Annotations.DestructiveHint || !moveOutTool.Annotations.IdempotentHint || moveOutTool.Annotations.OpenWorldHint == nil || *moveOutTool.Annotations.OpenWorldHint {

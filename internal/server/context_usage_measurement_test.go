@@ -92,11 +92,11 @@ func TestContextOptimizationSerializedBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := fmt.Sprintf("sha256:%x", sha256.Sum256(baseBytes))
+	base := compactFileRevision(fmt.Sprintf("sha256:%x", sha256.Sum256(baseBytes)))
 	editRaw := callRaw(rt.toolEdit, map[string]any{
 		"remote_session_id": remoteID, "purpose": "measure edit response",
 		"edits": []map[string]any{{
-			"operation": "update", "path": "edit.txt", "base_sha256": base,
+			"operation": "update", "path": "edit.txt", "rev": base,
 			"replacements": []map[string]any{{"match": "before", "replacement": "after"}},
 		}},
 	})
@@ -119,7 +119,7 @@ func TestContextOptimizationSerializedBytes(t *testing.T) {
 	staleRaw := callRaw(rt.toolEdit, map[string]any{
 		"remote_session_id": remoteID, "purpose": "measure stale edit",
 		"edits": []map[string]any{{
-			"operation": "update", "path": "edit.txt", "base_sha256": base,
+			"operation": "update", "path": "edit.txt", "rev": base,
 			"replacements": []map[string]any{{"match": "after", "replacement": "newer"}},
 		}},
 	})

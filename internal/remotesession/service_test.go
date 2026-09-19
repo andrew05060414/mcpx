@@ -47,16 +47,16 @@ func TestCreateListGetAndIdempotency(t *testing.T) {
 	if first.Session.ID != second.Session.ID {
 		t.Fatalf("idempotent result changed: %+v %+v", first, second)
 	}
-	if first.ResumeToken == "" || second.ResumeToken != "" || !second.ResumeTokenAlreadyIssued {
-		t.Fatalf("one-time token contract violated: first=%+v second=%+v", first, second)
+	if first.Replayed || !second.Replayed {
+		t.Fatalf("idempotent replay contract violated: first=%+v second=%+v", first, second)
 	}
 	var cached string
 	if err := service.db.QueryRow(`SELECT response_json FROM idempotency_records
 		WHERE principal_id = ? AND client_request_id = ?`, owner.ID, in.ClientRequestID).Scan(&cached); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(cached, first.ResumeToken) {
-		t.Fatal("resume token was persisted in idempotency record")
+	if !strings.Contains(cached, `"replayed":true`) {
+		t.Fatalf("idempotency record does not mark the replay: %s", cached)
 	}
 	list, err := service.List(context.Background(), owner, ListInput{Workspace: "mcpx"})
 	if err != nil {
@@ -71,54 +71,16 @@ func TestCreateListGetAndIdempotency(t *testing.T) {
 	}
 }
 
-func TestGetAcceptsLegacyUUIDSessionID(t *testing.T) {
-	service, _ := testService(t)
-	owner := testPrincipal("legacy-owner")
-	now := time.Now().UTC().UnixMilli()
-	legacyID := "43f44cc9-78b4-4f2e-8abc-ce3b2470798d"
-	if _, err := service.db.Exec(`INSERT INTO principals (id, kind, subject_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`, owner.ID, owner.Kind, owner.SubjectHash, now, now); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.db.Exec(`INSERT INTO remote_sessions (id, workspace_name, workspace_path, label, description, status, owner_principal_id, version, created_at, last_active_at) VALUES (?, 'mcpx', ?, 'legacy', '', 'active', ?, 1, ?, ?)`, legacyID, t.TempDir(), owner.ID, now, now); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.db.Exec(`INSERT INTO remote_session_members (remote_session_id, principal_id, role, joined_at, last_active_at) VALUES (?, ?, 'owner', ?, ?)`, legacyID, owner.ID, now, now); err != nil {
-		t.Fatal(err)
-	}
-	got, err := service.Get(context.Background(), owner, legacyID)
-	if err != nil || got.ID != legacyID {
-		t.Fatalf("legacy UUID session lookup failed: got=%+v err=%v", got, err)
-	}
-}
-
-func TestHandoffAttachIsOneShotAndACLFiltered(t *testing.T) {
+func TestGetRejectsNonMember(t *testing.T) {
 	service, _ := testService(t)
 	owner := testPrincipal("owner")
 	other := testPrincipal("other")
-	created, err := service.Create(context.Background(), owner, CreateInput{WorkspaceName: "mcpx", WorkspacePath: t.TempDir(), Label: "handoff"})
+	created, err := service.Create(context.Background(), owner, CreateInput{WorkspaceName: "mcpx", WorkspacePath: t.TempDir(), Label: "acl"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.Get(context.Background(), other, created.Session.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unauthorized get: %v", err)
-	}
-	handoff, err := service.Handoff(context.Background(), owner, created.Session.ID, "editor", "continue", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	attached, err := service.Attach(context.Background(), other, handoff.HandoffToken, "client-b", "2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if attached.ID != created.Session.ID || attached.Role != "editor" {
-		t.Fatalf("attached: %+v", attached)
-	}
-	if _, err := service.Attach(context.Background(), testPrincipal("third"), handoff.HandoffToken, "client-c", "1"); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("token should be consumed: %v", err)
-	}
-	list, err := service.List(context.Background(), other, ListInput{})
-	if err != nil || len(list.Sessions) != 1 {
-		t.Fatalf("attached list: %+v err=%v", list, err)
 	}
 }
 
