@@ -152,7 +152,7 @@ func TestControlCLIErrorRedactsSecrets(t *testing.T) {
 		}, fmt.Errorf("token ghp_abcdefghijklmnopqrstuvwxyz012345 rejected")
 	}
 	rt := &Runtime{}
-	response := callEnvelope(t, rt.toolMulticaListAgents, context.Background(), map[string]any{})
+	response := callEnvelope(t, rt.toolMulticaControlListAgents, context.Background(), map[string]any{})
 	if statusOK(response) {
 		t.Fatalf("expected CLI failure: %+v", response)
 	}

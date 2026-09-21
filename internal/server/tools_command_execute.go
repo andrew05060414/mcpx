@@ -765,6 +765,17 @@ func isEphemeralRuntimeArguments(args map[string]any) bool {
 }
 
 func observationArguments(name string, args map[string]any) map[string]any {
+	if name == "execute" && strings.TrimSpace(stringPayload(args, "action")) == "agy_continue" {
+		clone := make(map[string]any, len(args)+2)
+		for key, value := range args {
+			clone[key] = value
+		}
+		if prompt, ok := args["prompt"].(string); ok {
+			digest := sha256.Sum256([]byte(prompt))
+			clone["prompt"] = "[redacted AGY prompt sha256:" + hex.EncodeToString(digest[:]) + " bytes=" + fmt.Sprint(len(prompt)) + "]"
+		}
+		return clone
+	}
 	if name != "execute" || !isEphemeralRuntimeArguments(args) {
 		return args
 	}

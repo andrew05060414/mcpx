@@ -99,6 +99,9 @@ func MatchCommand(rules config.CommandRules, command string) Decision {
 
 // matchSegment evaluates a single command segment without control operators.
 func matchSegment(rules config.CommandRules, segment string) Decision {
+	if isAGYDangerousPermissionCommand(segment) {
+		return Deny
+	}
 	if matchAny(rules.Deny, segment) {
 		return Deny
 	}
@@ -113,6 +116,23 @@ func matchSegment(rules config.CommandRules, segment string) Decision {
 	}
 	decision := ParseDefault(rules.Default)
 	return decision
+}
+
+// isAGYDangerousPermissionCommand is a narrow, built-in deny guard. The
+// structured agy_continue action never emits this flag; the guard also keeps
+// the legacy free-form command surface from bypassing that boundary when a
+// workspace uses default: allow.
+func isAGYDangerousPermissionCommand(segment string) bool {
+	fields := strings.Fields(strings.TrimSpace(segment))
+	if len(fields) < 2 || (fields[0] != "agy" && fields[0] != "agy.exe") {
+		return false
+	}
+	for _, field := range fields[1:] {
+		if field == "--dangerously-skip-permissions" {
+			return true
+		}
+	}
+	return false
 }
 
 // HasUnsafeShellOperator reports active shell syntax that cannot be safely

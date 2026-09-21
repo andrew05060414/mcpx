@@ -58,7 +58,7 @@ func (r *Runtime) registerMulticaControlTools(s *mcp.Server) {
 		map[string]any{
 			"query": stringSchema("Optional name substring filter"),
 		},
-		nil, arcControlReadAnnotation), r.toolMulticaListAgents)
+		nil, arcControlReadAnnotation), r.toolMulticaControlListAgents)
 
 	r.addToolIfAbsent(s, cleanCoreTool("multica_assign_execution",
 		"Assign or reassign a Multica execution to an agent. Write-gated: requires user_confirmed=true. Wraps `multica issue update|assign`.",
@@ -164,7 +164,7 @@ func (r *Runtime) toolMulticaGetExecution(ctx context.Context, req *mcp.CallTool
 	return compactToolResult(data, fmt.Sprintf("Loaded Multica execution %s.", identifier)), nil
 }
 
-func (r *Runtime) toolMulticaListAgents(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (r *Runtime) toolMulticaControlListAgents(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := mcpresult.Arguments(req)
 	payload, cli, err := runMulticaJSON(ctx, [][]string{
 		{"agent", "list", "--output", "json"},
