@@ -413,13 +413,14 @@ func (r *Runtime) registerConsolidatedToolsCatalog(s *mcp.Server) {
 			"script":   stringSchema("Python/Node 源码或 SQLite 单条只读查询；最大 65536 bytes。服务端只持久化 SHA/字节数，不把源码写入 Task/audit/observation"),
 			"database": stringSchema("仅 sqlite runtime 使用；Workspace 内现有 SQLite 数据库的相对路径"),
 		}, Required: []string{"remote_session_id", "purpose"}},
-		"agy_continue": {Description: "在当前已注册 Workspace 内，以结构化参数恢复 AGY 的已有 conversation，或继续该 Workspace 最近的 conversation。只允许 conversation/continue 两种恢复模式；prompt 不经过 shell，服务端不提供 dangerously-skip-permissions。", Properties: map[string]any{
-			"resume":          enumSchema("恢复方式；conversation 必须带 conversation_id，continue 使用该 Workspace 最近的会话", "conversation", "continue"),
-			"conversation_id": map[string]any{"type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", "description": "AGY conversation UUID；仅 resume=conversation 使用"},
-			"prompt":          stringSchema("本次 AGY turn 的 prompt；最大 65536 bytes，作为单独 argv 传入"),
-			"model":           enumSchema("AGY 模型；当前安全 continuation profile", "gemini-3.7-flash"),
-			"effort":          enumSchema("AGY 推理强度", "low", "medium", "high"),
-			"mode":            enumSchema("AGY 执行模式", "accept-edits", "plan"),
+		"agy_continue": {Description: "在当前已注册 Workspace 内，以结构化参数恢复 AGY 的已有 conversation，或继续该 Workspace 最近的 conversation。只允许 conversation/continue 两种恢复模式；prompt 不经过 shell。dangerously_skip_permissions 为 true 时才附带 --dangerously-skip-permissions。", Properties: map[string]any{
+			"resume":                       enumSchema("恢复方式；conversation 必须带 conversation_id，continue 使用该 Workspace 最近的会话", "conversation", "continue"),
+			"conversation_id":              map[string]any{"type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", "description": "AGY conversation UUID；仅 resume=conversation 使用"},
+			"prompt":                       stringSchema("本次 AGY turn 的 prompt；最大 65536 bytes，作为单独 argv 传入"),
+			"model":                        enumSchema("AGY 模型；当前安全 continuation profile", "gemini-3.7-flash"),
+			"effort":                       enumSchema("AGY 推理强度", "low", "medium", "high"),
+			"mode":                         enumSchema("AGY 执行模式", "accept-edits", "plan"),
+			"dangerously_skip_permissions": map[string]any{"type": "boolean", "description": "为 true 时传给 agy --dangerously-skip-permissions"},
 		}, Required: []string{"remote_session_id", "purpose", "resume", "prompt"}},
 		"attach": {Description: "等待并读取已有执行 Task 的输出；延续既有 Task，不需要客户端重复 purpose。", Properties: map[string]any{
 			"execution_task_id": stringSchema("服务端返回的执行 Task ID"), "stdout_offset": numberSchema("stdout 字节偏移"),

@@ -64,14 +64,14 @@ func TestDefaultCommandPolicyAllowsUnmatchedCommands(t *testing.T) {
 	}
 }
 
-func TestMatchCommandAlwaysDeniesAGYDangerousPermissionFlag(t *testing.T) {
+func TestMatchCommandAllowsAGYDangerousPermissionFlag(t *testing.T) {
 	rules := config.CommandRules{Default: "allow"}
 	for _, command := range []string{
 		"agy --conversation ac72aee8-f726-4c0f-ac2f-94747d6aebd5 --dangerously-skip-permissions -p smoke",
 		"agy.exe --new-project --dangerously-skip-permissions -p smoke",
 	} {
-		if got := MatchCommand(rules, command); got != Deny {
-			t.Fatalf("%q: got %s, want deny", command, got)
+		if got := MatchCommand(rules, command); got != Allow {
+			t.Fatalf("%q: got %s, want allow", command, got)
 		}
 	}
 	if got := MatchCommand(rules, "agy --conversation ac72aee8-f726-4c0f-ac2f-94747d6aebd5 --model gemini-3.7-flash -p smoke"); got != Allow {

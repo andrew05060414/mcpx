@@ -53,17 +53,39 @@ func TestAGYContinuationSpecUsesStructuredDirectArgs(t *testing.T) {
 	if got := agyContinuationArgs(continueSpec); got[0] != "--continue" || got[1] != "--model" {
 		t.Fatalf("continue args=%v", got)
 	}
+
+	skipSpec, err := agyContinuationSpecFromPayload(map[string]any{
+		"resume":                       "continue",
+		"prompt":                       "continue with permissions",
+		"dangerously_skip_permissions": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	skipArgs := agyContinuationArgs(skipSpec)
+	found := false
+	for _, arg := range skipArgs {
+		if arg == "--dangerously-skip-permissions" {
+			found = true
+		}
+		if arg == "continue with permissions" && !found {
+			t.Fatalf("flag must precede prompt: %v", skipArgs)
+		}
+	}
+	if !found || !skipSpec.SkipPermissions {
+		t.Fatalf("skip permissions not applied: %+v args=%v", skipSpec, skipArgs)
+	}
 }
 
 func TestAGYContinuationSpecRejectsUnsafeOrAmbiguousInputs(t *testing.T) {
 	base := map[string]any{"resume": "conversation", "conversation_id": "4e95dc70-ac8d-4de4-ad7b-fa7a736d03ba", "prompt": "smoke"}
 	for name, change := range map[string]func(map[string]any){
-		"invalid conversation id": func(p map[string]any) { p["conversation_id"] = "not-a-uuid" },
-		"unsupported model":       func(p map[string]any) { p["model"] = "arbitrary-model" },
-		"invalid effort":          func(p map[string]any) { p["effort"] = "x" },
-		"invalid mode":            func(p map[string]any) { p["mode"] = "bypass" },
-		"dangerous permissions":   func(p map[string]any) { p["dangerously_skip_permissions"] = true },
-		"continue with id":        func(p map[string]any) { p["resume"] = "continue" },
+		"invalid conversation id":    func(p map[string]any) { p["conversation_id"] = "not-a-uuid" },
+		"unsupported model":          func(p map[string]any) { p["model"] = "arbitrary-model" },
+		"invalid effort":             func(p map[string]any) { p["effort"] = "x" },
+		"invalid mode":               func(p map[string]any) { p["mode"] = "bypass" },
+		"dangerous permissions type": func(p map[string]any) { p["dangerously_skip_permissions"] = "yes" },
+		"continue with id":           func(p map[string]any) { p["resume"] = "continue" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			payload := map[string]any{}

@@ -28,15 +28,16 @@ const (
 var agyConversationIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 
 type agyContinuationSpec struct {
-	Resume         string
-	ConversationID string
-	Prompt         string
-	Model          string
-	Effort         string
-	Mode           string
-	PromptSHA256   string
-	DisplayCommand string
-	CommandDigest  string
+	Resume          string
+	ConversationID  string
+	Prompt          string
+	Model           string
+	Effort          string
+	Mode            string
+	SkipPermissions bool
+	PromptSHA256    string
+	DisplayCommand  string
+	CommandDigest   string
 }
 
 func (r *Runtime) toolAGYContinue(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -56,7 +57,7 @@ func (r *Runtime) toolAGYContinue(ctx context.Context, req *mcp.CallToolRequest)
 		"decision":              "allow",
 		"structured_action":     "agy_continue",
 		"shell":                 false,
-		"dangerous_permissions": false,
+		"dangerous_permissions": spec.SkipPermissions,
 	}
 	detail := agyContinuationDetail(envReq.Intent, "workspace", spec, commandPolicy)
 	detail["continuation"] = agyContinuationData(spec, remote.WorkspacePath)
@@ -118,8 +119,13 @@ func (r *Runtime) toolAGYContinue(ctx context.Context, req *mcp.CallToolRequest)
 }
 
 func agyContinuationSpecFromPayload(payload map[string]any) (agyContinuationSpec, error) {
-	if _, exists := payload["dangerously_skip_permissions"]; exists {
-		return agyContinuationSpec{}, fmt.Errorf("dangerously_skip_permissions is not supported by agy_continue")
+	skipPermissions := false
+	if raw, exists := payload["dangerously_skip_permissions"]; exists {
+		value, ok := raw.(bool)
+		if !ok {
+			return agyContinuationSpec{}, fmt.Errorf("dangerously_skip_permissions must be a boolean")
+		}
+		skipPermissions = value
 	}
 	resume := strings.ToLower(strings.TrimSpace(stringPayload(payload, "resume")))
 	if resume != "conversation" && resume != "continue" {
@@ -163,11 +169,15 @@ func agyContinuationSpecFromPayload(payload map[string]any) (agyContinuationSpec
 	}
 	promptDigest := sha256.Sum256([]byte(prompt))
 	promptSHA256 := "sha256:" + hex.EncodeToString(promptDigest[:])
-	digestInput, _ := json.Marshal(map[string]any{"resume": resume, "conversation_id": conversationID, "model": model, "effort": effort, "mode": mode, "prompt_sha256": promptSHA256})
+	digestInput, _ := json.Marshal(map[string]any{"resume": resume, "conversation_id": conversationID, "model": model, "effort": effort, "mode": mode, "skip_permissions": skipPermissions, "prompt_sha256": promptSHA256})
 	commandDigestBytes := sha256.Sum256(digestInput)
 	commandDigest := "sha256:" + hex.EncodeToString(commandDigestBytes[:])
-	display := fmt.Sprintf("agy %s%s --model %s --effort %s --mode %s --output-format json --print [prompt %s bytes=%d]", resumeFlag(resume), conversationFlag(conversationID), model, effort, mode, promptSHA256, len(prompt))
-	return agyContinuationSpec{Resume: resume, ConversationID: conversationID, Prompt: prompt, Model: model, Effort: effort, Mode: mode, PromptSHA256: promptSHA256, DisplayCommand: display, CommandDigest: commandDigest}, nil
+	skipFlag := ""
+	if skipPermissions {
+		skipFlag = " --dangerously-skip-permissions"
+	}
+	display := fmt.Sprintf("agy %s%s%s --model %s --effort %s --mode %s --output-format json --print [prompt %s bytes=%d]", resumeFlag(resume), conversationFlag(conversationID), skipFlag, model, effort, mode, promptSHA256, len(prompt))
+	return agyContinuationSpec{Resume: resume, ConversationID: conversationID, Prompt: prompt, Model: model, Effort: effort, Mode: mode, SkipPermissions: skipPermissions, PromptSHA256: promptSHA256, DisplayCommand: display, CommandDigest: commandDigest}, nil
 }
 
 func resumeFlag(resume string) string {
@@ -189,7 +199,11 @@ func agyContinuationArgs(spec agyContinuationSpec) []string {
 	if spec.ConversationID != "" {
 		args = append(args, spec.ConversationID)
 	}
-	return append(args, "--model", spec.Model, "--effort", spec.Effort, "--mode", spec.Mode, "--output-format", "json", "-p", spec.Prompt)
+	args = append(args, "--model", spec.Model, "--effort", spec.Effort, "--mode", spec.Mode, "--output-format", "json")
+	if spec.SkipPermissions {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	return append(args, "-p", spec.Prompt)
 }
 
 func agyContinuationWait(payload map[string]any) time.Duration {
@@ -205,7 +219,7 @@ func agyContinuationWait(payload map[string]any) time.Duration {
 }
 
 func agyContinuationData(spec agyContinuationSpec, workspacePath string) map[string]any {
-	return map[string]any{"resume": spec.Resume, "conversation_id": spec.ConversationID, "model": spec.Model, "effort": spec.Effort, "mode": spec.Mode, "prompt_sha256": spec.PromptSHA256, "prompt_bytes": len(spec.Prompt), "dangerous_permissions": false, "working_directory": workspacePath, "workspace_scoped": true}
+	return map[string]any{"resume": spec.Resume, "conversation_id": spec.ConversationID, "model": spec.Model, "effort": spec.Effort, "mode": spec.Mode, "prompt_sha256": spec.PromptSHA256, "prompt_bytes": len(spec.Prompt), "dangerous_permissions": spec.SkipPermissions, "working_directory": workspacePath, "workspace_scoped": true}
 }
 
 func agyContinuationDetail(purpose, scope string, spec agyContinuationSpec, commandPolicy map[string]any) map[string]any {
