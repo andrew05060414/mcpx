@@ -854,7 +854,33 @@ func loadTasks(ctx context.Context, q queryer, planID string) ([]Task, error) {
 	if err := loadEvidence(ctx, q, planID, result, byID); err != nil {
 		return nil, err
 	}
+	if err := loadMulticaDispatches(ctx, q, planID, result, byID); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+func loadMulticaDispatches(ctx context.Context, q queryer, planID string, tasks []Task, byID map[string]int) error {
+	rows, err := q.QueryContext(ctx, `SELECT plan_id, task_id, issue_id, issue_identifier, status, assignee_id, project_id, priority, created_at, updated_at
+		FROM plan_task_multica_dispatches WHERE plan_id = ? ORDER BY created_at, task_id`, planID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var dispatch MulticaDispatch
+		var createdAt, updatedAt int64
+		if err := rows.Scan(&dispatch.PlanID, &dispatch.PlanTaskID, &dispatch.IssueID, &dispatch.IssueIdentifier, &dispatch.Status,
+			&dispatch.AssigneeID, &dispatch.ProjectID, &dispatch.Priority, &createdAt, &updatedAt); err != nil {
+			return err
+		}
+		dispatch.CreatedAt = time.UnixMilli(createdAt).UTC()
+		dispatch.UpdatedAt = time.UnixMilli(updatedAt).UTC()
+		if index, ok := byID[dispatch.PlanTaskID]; ok {
+			tasks[index].MulticaDispatch = &dispatch
+		}
+	}
+	return rows.Err()
 }
 
 func loadEvidence(ctx context.Context, q queryer, planID string, tasks []Task, byID map[string]int) error {

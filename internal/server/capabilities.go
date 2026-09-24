@@ -56,6 +56,8 @@ func capabilityGroups() map[string][]string {
 		"control": {
 			"ai_usage_get_status",
 			"multica_list_executions", "multica_get_execution", "multica_list_agents",
+			"multica_materialize_plan_task",
+			"plan_run_grant",
 			"multica_assign_execution", "multica_retry_execution", "multica_request_review",
 			"multica_update_status", "github_comment",
 		},
@@ -99,6 +101,8 @@ var toolCapabilityDefinitions = []toolCapabilityDefinition{
 	{Name: "multica_list_executions", Domain: "multica"},
 	{Name: "multica_get_execution", Domain: "multica"},
 	{Name: "multica_list_agents", Domain: "multica"},
+	{Name: "multica_materialize_plan_task", Domain: "multica", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
+	{Name: "plan_run_grant", Domain: "plan", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "multica_assign_execution", Domain: "multica", Roles: []string{"owner", "editor"}},
 	{Name: "multica_retry_execution", Domain: "multica", Roles: []string{"owner", "editor"}},
 	{Name: "multica_request_review", Domain: "multica", Roles: []string{"owner", "editor"}},

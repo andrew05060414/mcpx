@@ -186,6 +186,7 @@ func isCleanPublicTool(tool string) bool {
 	case "session", "read", "edit", "move_out", "observe", "progress", "execute", "plan", "artifact", "skill_tool", "mcp_tool",
 		"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide",
 		"ai_usage_get_status", "multica_list_executions", "multica_get_execution", "multica_list_agents",
+		"multica_materialize_plan_task", "plan_run_grant",
 		"multica_assign_execution", "multica_retry_execution", "multica_request_review", "multica_update_status", "github_comment":
 		return true
 	default:

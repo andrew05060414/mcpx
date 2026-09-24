@@ -497,6 +497,63 @@ var migrations = []string{
 			state_event_id = 'operation:' || hex(id) || ':' || (state_sequence + 1)
 			WHERE id = NEW.operation_id AND state NOT IN ('succeeded','failed','interrupted','cancelled');
 	END;`,
+	`CREATE TABLE IF NOT EXISTS plan_task_multica_dispatches (
+		plan_id TEXT NOT NULL,
+		task_id TEXT NOT NULL PRIMARY KEY,
+		remote_session_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('creating','dispatched')),
+		issue_id TEXT NOT NULL DEFAULT '',
+		issue_identifier TEXT NOT NULL DEFAULT '',
+		assignee_id TEXT NOT NULL,
+		project_id TEXT NOT NULL DEFAULT '',
+		priority TEXT NOT NULL DEFAULT '',
+		created_by TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
+		FOREIGN KEY (task_id) REFERENCES plan_tasks(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_plan_task_dispatch_session
+		ON plan_task_multica_dispatches(remote_session_id, plan_id, status);`,
+	`CREATE TABLE IF NOT EXISTS plan_run_grants (
+		id TEXT PRIMARY KEY,
+		plan_id TEXT NOT NULL,
+		remote_session_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('active','revoked','superseded')),
+		repositories_json TEXT NOT NULL,
+		auto_merge_max_risk TEXT NOT NULL CHECK (auto_merge_max_risk IN ('none','routine','standard','review')),
+		max_tokens INTEGER NOT NULL CHECK (max_tokens > 0),
+		tokens_used INTEGER NOT NULL DEFAULT 0,
+		max_runtime_ms INTEGER NOT NULL CHECK (max_runtime_ms > 0),
+		max_attempts INTEGER NOT NULL CHECK (max_attempts > 0),
+		attempts_used INTEGER NOT NULL DEFAULT 0,
+		expires_at INTEGER NOT NULL,
+		first_used_at INTEGER,
+		note TEXT NOT NULL DEFAULT '',
+		created_by TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		ended_by TEXT NOT NULL DEFAULT '',
+		ended_at INTEGER,
+		end_reason TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+	);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_run_grants_one_active
+		ON plan_run_grants(plan_id) WHERE status = 'active';
+	CREATE INDEX IF NOT EXISTS idx_plan_run_grants_session_plan
+		ON plan_run_grants(remote_session_id, plan_id, created_at DESC);
+	CREATE TABLE IF NOT EXISTS plan_run_grant_uses (
+		grant_id TEXT NOT NULL,
+		plan_task_id TEXT NOT NULL,
+		idempotency_key_sha256 TEXT NOT NULL,
+		repository TEXT NOT NULL,
+		risk_level TEXT NOT NULL,
+		attempt_consumed INTEGER NOT NULL,
+		principal_id TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		PRIMARY KEY (grant_id, plan_task_id, idempotency_key_sha256),
+		FOREIGN KEY (grant_id) REFERENCES plan_run_grants(id) ON DELETE CASCADE
+	);`,
 }
 
 func applyMigrations(ctx context.Context, db *sql.DB) error {

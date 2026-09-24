@@ -646,6 +646,8 @@ MCP：不知道 Server 时 `list`；知道 Server 但不知道 Tools 时 `list(s
 
 MCP 的 `call` 在同一个已初始化的上游实例内完成 `tools/list`、schema 校验和 `tools/call`，不会先检查实例 A、再执行实例 B。Session inventory 与 `mcp_tool(action=list)` 只返回 Server 名称、description 和状态，用于第一轮 relevance routing；完整 Tool schema 仍需按需 `describe`。
 
+Plan 运行授权（run grant）：`multica_materialize_plan_task` 默认每个 Plan Task 都要 `user_confirmed=true`。用户可以对整个 Plan 确认一次 `plan_run_grant(action="create", user_confirmed=true, idempotency_key=...)`，写明允许的仓库 `repositories`（owner/name）、自动合并最高风险等级 `auto_merge_max_risk`（`none` / `routine` 例行 / `standard` 标准 / `review` 需过目；`signoff` 需签字永远要人，不能授权）、预算 `max_tokens`、`max_runtime_minutes`（从第一次派发开始计时）、`max_attempts` 和 `expires_in_minutes`。授权有效期内，只要 materialize 调用带上范围内的 `repository` 和 `risk_level`，就不再逐次确认；Issue 描述会附上 `mcpx-dispatch-policy` 标记，说明这次派发走哪条授权、能否自动合并。仓库不在范围内、缺少风险等级、授权过期、被撤销或被新授权替换、Plan 已结束、运行时长/尝试次数/token 用完时，都会退回原来的 `waiting_confirmation`，并在 `data.run_grant` 里给出原因代码。每次授权、使用、退回、撤销和用量上报都写入 Plan events（`plan.run_grant.*`）和 `audit.jsonl`。同一个 `idempotency_key` 重试不会重复扣减尝试次数；token 用量由调度器通过 `report_usage` 上报累计值（只增不减），MCPX 自己不计量 token。`get` 返回当前授权和历史，`revoke` 立即生效。
+
 ### 6. 批量和异步操作
 
 需要并行读取或执行多个相互独立的工具时使用 `operation_batch`；有依赖时在
@@ -850,6 +852,8 @@ ARC 内容仍先显示 `Read`、`Edited`、`Ran`、`Searched` 等语义动作，
 - `execute`、Skill/MCP 等需要确认的调用可通过 `user_confirmed` 表达用户对同一冻结业务请求的确认，
   服务端仍会重新执行权限与策略检查；`move_out` 使用独立的 `prepare → confirmation_uuid → submit`
   协议，`submit` 只接受服务端签发的确认 UUID 和 `remote_session_id`。
+- `plan_run_grant` 只能放宽同一 Remote Session 中一个 Plan 的 `multica_materialize_plan_task` 确认，
+  范围由用户确认时写定；它不授权需签字等级的合并、部署、密钥或删除远端数据。
 - `secret_provide` 的明文值只在进程内短期使用，不写入 SQLite、Workspace 或日志。
 - SQLite、Task 日志、OAuth 客户端注册和 Token 密钥位于 `~/.mcpx/`，运行时使用
   受限文件权限；不要把真实 Token、密码或 Secret 写入仓库和命令字符串。

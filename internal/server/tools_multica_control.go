@@ -36,6 +36,7 @@ type controlCLIResult struct {
 func (r *Runtime) registerMulticaControlTools(s *mcp.Server) {
 	executionID := stringSchema("Multica execution/issue id or identifier, e.g. TEC-42")
 	confirm := booleanSchema("Required true for write tools after the user confirms the action. Tokens never appear in the model-visible result.")
+	r.registerMulticaPlanTaskTool(s, confirm)
 
 	r.addToolIfAbsent(s, cleanCoreTool("multica_list_executions",
 		"List Multica executions/issues via the local `multica` CLI (`issue list --output json`). Filter by project, status, or assignee. Read-only.",
@@ -341,7 +342,7 @@ func (r *Runtime) toolGitHubComment(ctx context.Context, req *mcp.CallToolReques
 	return compactToolResult(data, fmt.Sprintf("Commented on %s %s#%d.", kind, repo, number)), nil
 }
 
-func (r *Runtime) requireWriteConfirm(ctx context.Context, req *mcp.CallToolRequest, summary string) (bool, *mcp.CallToolResult, error) {
+func (r *Runtime) requireWriteConfirm(ctx context.Context, req *mcp.CallToolRequest, summary string, extra ...map[string]any) (bool, *mcp.CallToolResult, error) {
 	args := mcpresult.Arguments(req)
 	if boolLike(args, "user_confirmed") {
 		return false, nil, nil
@@ -355,13 +356,22 @@ func (r *Runtime) requireWriteConfirm(ctx context.Context, req *mcp.CallToolRequ
 		retry[key] = value
 	}
 	retry["user_confirmed"] = true
-	response := envelope.Fail(envelope.StatusNeedConfirmation, envReq.RequestID, "", map[string]any{
+	data := map[string]any{
 		"confirmation_required":   true,
 		"user_confirmed_required": true,
 		"summary":                 summary,
 		"user_confirmed":          true,
 		"retry_arguments":         retry,
-	}, "USER_CONFIRMATION_REQUIRED", summary+" Retry the same tool with user_confirmed=true. Tokens are never shown.")
+	}
+	for _, fields := range extra {
+		for key, value := range fields {
+			if _, reserved := data[key]; !reserved {
+				data[key] = value
+			}
+		}
+	}
+	response := envelope.Fail(envelope.StatusNeedConfirmation, envReq.RequestID, "", data,
+		"USER_CONFIRMATION_REQUIRED", summary+" Retry the same tool with user_confirmed=true. Tokens are never shown.")
 	result, err := r.resultJSON(response)
 	return true, result, err
 }
