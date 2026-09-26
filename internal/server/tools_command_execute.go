@@ -166,15 +166,15 @@ func (r *Runtime) toolCommandExecute(ctx context.Context, req *mcp.CallToolReque
 				if runtimeSpec != nil {
 					retryArguments = runtimeConfirmationRetryArguments(remote.ID, purpose, scope, runtimeSpec)
 				}
+				if key, present := envReq.Payload["idempotency_key"]; present {
+					retryArguments["idempotency_key"] = key
+				}
 				if argvSpec != nil {
 					confirmationData["argv"] = envReq.Payload["argv"]
 					confirmationData["shell"] = false
 					delete(retryArguments, "command")
 					retryArguments["argv"] = envReq.Payload["argv"]
 					retryArguments["shell"] = false
-					if key, present := envReq.Payload["idempotency_key"]; present {
-						retryArguments["idempotency_key"] = key
-					}
 					if expected, present := envReq.Payload["expected_workspace"]; present {
 						retryArguments["expected_workspace"] = expected
 					}
@@ -185,13 +185,12 @@ func (r *Runtime) toolCommandExecute(ctx context.Context, req *mcp.CallToolReque
 				addRecoveryAction(&response, "execute", "用户确认后使用相同 command/task 或 runtime+script、purpose 和 remote_session_id 重试，并设置 user_confirmed=true", retryArguments)
 				return r.resultJSON(response)
 			}
-			result, executeErr := executeApproved(yield)
-			if executeErr == nil {
-				if _, consumed := r.approvals.Consume(pending.ID); !consumed {
-					return r.terminalError(envReq, remote.ID, remote.WorkspaceName, "confirmation_state_error", "confirmed command approval could not be consumed")
-				}
+			// Reserve the one-time approval before starting the process. Consuming
+			// after execution lets concurrent confirmed retries launch twice.
+			if _, consumed := r.approvals.Consume(pending.ID); !consumed {
+				return r.terminalError(envReq, remote.ID, remote.WorkspaceName, "confirmation_state_error", "confirmed command approval could not be consumed")
 			}
-			return result, executeErr
+			return executeApproved(yield)
 		}
 		if !r.hasPendingCommandConfirmation(remote.ID, principal.ID, command, purpose, scope, confirmationToken) {
 			pending, confirmationErr := r.approvals.PutPending(approval.Pending{
