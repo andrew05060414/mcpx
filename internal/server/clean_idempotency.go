@@ -217,6 +217,9 @@ func (r *Runtime) withCleanIdempotency(
 		_ = r.idempotency.MarkInDoubt(ctx, key, fingerprint, nil)
 		return r.cleanIdempotencyFailure(envReq, session, operation, payload, "IDEMPOTENCY_IN_DOUBT", "handler returned no durable result; reconcile before retrying"), callErr
 	}
+	// Persist the same sanitized result that will be returned to the client so
+	// a later idempotency replay cannot bypass the outbound boundary.
+	result = r.sanitizePublicToolResult(result)
 	encoded, encodeErr := encodeCleanToolResult(operation, result)
 	if encodeErr != nil {
 		_ = r.idempotency.MarkInDoubt(ctx, key, fingerprint, nil)

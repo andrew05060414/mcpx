@@ -13,12 +13,18 @@ var sensitiveKeyParts = []string{
 	"token", "secret", "password", "authorization", "cookie", "api_key", "apikey", "private_key", "client_secret",
 }
 
-var sensitiveTextPattern = regexp.MustCompile(`(?i)(\b(?:authorization|proxy-authorization)\b\s*:\s*bearer\s+|\bbearer\s+|["']?\b(?:token|secret|password|authorization|cookie|api[_-]?key|private[_-]?key|client[_-]?secret)\b["']?\s*[:=]\s*)(["']?)[^"'\s,;}]+`)
-var sensitiveTextMarkerPattern = regexp.MustCompile(`(?i)(\b(?:authorization|proxy-authorization)\b\s*:\s*bearer\s*|\bbearer\s*|["']?\b(?:token|secret|password|authorization|cookie|api[_-]?key|private[_-]?key|client[_-]?secret)\b["']?\s*[:=]\s*["']?)$`)
+var sensitiveTextPattern = regexp.MustCompile(`(?i)(\b(?:authorization|proxy-authorization)\b\s*:\s*bearer\s+|\bbearer\s+|["']?\b(?:token|secret|password|passwd|authorization|cookie|api[_-]?key|access[_-]?token|private[_-]?key|client[_-]?secret)\b["']?\s*[:=]\s*)(["']?)[^"'\s,;}]+`)
+var sensitiveTextMarkerPattern = regexp.MustCompile(`(?i)(\b(?:authorization|proxy-authorization)\b\s*:\s*bearer\s*|\bbearer\s*|["']?\b(?:token|secret|password|passwd|authorization|cookie|api[_-]?key|access[_-]?token|private[_-]?key|client[_-]?secret)\b["']?\s*[:=]\s*["']?)$`)
+var providerSecretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`-----BEGIN (?:OPENSSH|RSA|EC|DSA|PRIVATE) PRIVATE KEY-----[\s\S]*?-----END (?:OPENSSH|RSA|EC|DSA|PRIVATE) PRIVATE KEY-----`),
+	regexp.MustCompile(`\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}\b`),
+	regexp.MustCompile(`\b(?:sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})\b`),
+	regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),
+}
 
 var sensitiveTextPrefixes = []string{
-	"token", "secret", "password", "authorization", "proxy-authorization", "cookie",
-	"api_key", "apikey", "private_key", "client_secret", "bearer",
+	"token", "secret", "password", "passwd", "authorization", "proxy-authorization", "cookie",
+	"api_key", "apikey", "access_token", "private_key", "client_secret", "bearer",
 }
 
 // TextStreamSanitizer redacts credentials that are split across output chunks.
@@ -113,6 +119,33 @@ func Sanitize(value any, maxBytes int) (any, bool) {
 	return map[string]any{"truncated": true}, true
 }
 
+// SanitizePublic applies the outbound boundary rules while preserving
+// protocol values that the client must send back on a retry. Confirmation
+// tokens are workflow handles, not credentials; redacting them would make a
+// valid confirmation response unusable.
+func SanitizePublic(value any, maxBytes int) (any, bool) {
+	if maxBytes <= 0 {
+		maxBytes = MaxEventBytes
+	}
+	clean := sanitizePublicValue(value)
+	encoded, err := json.Marshal(clean)
+	if err != nil {
+		return redactedValue, true
+	}
+	if len(encoded) <= maxBytes {
+		return clean, false
+	}
+	for previewBytes := maxBytes; previewBytes > 0; previewBytes-- {
+		preview := truncateUTF8(string(encoded), previewBytes)
+		candidate := map[string]any{"truncated": true, "preview": preview}
+		candidateBytes, marshalErr := json.Marshal(candidate)
+		if marshalErr == nil && len(candidateBytes) <= maxBytes {
+			return candidate, true
+		}
+	}
+	return map[string]any{"truncated": true}, true
+}
+
 // SanitizeText applies the same UTF-8-safe bound to plain command output.
 func SanitizeText(value string, maxBytes int) (string, bool) {
 	value = RedactText(value)
@@ -133,7 +166,11 @@ func SanitizeText(value string, maxBytes int) (string, bool) {
 // intent, summaries and command output. Structured JSON uses key-based
 // redaction in Sanitize; this covers text fields that have no keys.
 func RedactText(value string) string {
-	return sensitiveTextPattern.ReplaceAllString(value, "$1$2[REDACTED]")
+	clean := value
+	for _, pattern := range providerSecretPatterns {
+		clean = pattern.ReplaceAllString(clean, redactedValue)
+	}
+	return sensitiveTextPattern.ReplaceAllString(clean, "$1$2[REDACTED]")
 }
 
 func sensitiveTextMarker(value string) (int, bool) {
@@ -200,27 +237,53 @@ func SanitizeJSON(value []byte, maxBytes int) ([]byte, bool) {
 }
 
 func sanitizeValue(value any) any {
+	return sanitizeValueWithProtocolKeys(value, false)
+}
+
+func sanitizePublicValue(value any) any {
+	return sanitizeValueWithProtocolKeys(value, true)
+}
+
+func sanitizeValueWithProtocolKeys(value any, preserveProtocolKeys bool) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		clean := make(map[string]any, len(typed))
 		for key, item := range typed {
-			if sensitiveKey(key) {
+			if sensitiveKey(key) && !(preserveProtocolKeys && publicProtocolKey(key)) {
 				clean[key] = redactedValue
 				continue
 			}
-			clean[key] = sanitizeValue(item)
+			if preserveProtocolKeys {
+				clean[key] = sanitizePublicValue(item)
+			} else {
+				clean[key] = sanitizeValue(item)
+			}
 		}
 		return clean
 	case []any:
 		clean := make([]any, len(typed))
 		for i, item := range typed {
-			clean[i] = sanitizeValue(item)
+			if preserveProtocolKeys {
+				clean[i] = sanitizePublicValue(item)
+			} else {
+				clean[i] = sanitizeValue(item)
+			}
 		}
 		return clean
 	case string:
 		return RedactText(typed)
 	default:
 		return value
+	}
+}
+
+func publicProtocolKey(key string) bool {
+	normalized := strings.ToLower(strings.NewReplacer("-", "_", " ", "_").Replace(key))
+	switch normalized {
+	case "confirmation_token", "confirmation_uuid", "idempotency_key":
+		return true
+	default:
+		return false
 	}
 }
 

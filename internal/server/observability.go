@@ -198,6 +198,9 @@ func (r *Runtime) instrumentTool(name string, handler mcp.ToolHandler) mcp.ToolH
 				result.IsError = true
 			}
 		}
+		// Every handler, including transparent upstream MCP calls, crosses the
+		// same outbound redaction boundary before ARC wrapping or transport.
+		result = r.sanitizePublicToolResult(result)
 		// Wrap first so host-visible content is the human summary; observation
 		// then snapshots that text only (never full structuredContent dump).
 		// ARC V2 semantic narration comes only from the durable Activity channel;
