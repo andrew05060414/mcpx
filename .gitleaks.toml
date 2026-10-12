@@ -1,0 +1,17 @@
+title = "MCPX secret scanning policy"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "mcpx-64-hex-secret"
+description = "MCPX high-entropy 64-character hexadecimal secret"
+regex = '''(?i)(?:^|[^0-9a-f])([0-9a-f]{64})(?:$|[^0-9a-f])'''
+secretGroup = 1
+
+[[rules]]
+id = "mcpx-token-prefix"
+description = "MCPX or provider token prefix"
+regex = '''(?i)\b((?:mul_|mat_|gho_|ghp_|sk-)[a-z0-9][a-z0-9_-]{7,})\b'''
+secretGroup = 1
+keywords = ["mul_", "mat_", "gho_", "ghp_", "sk-"]

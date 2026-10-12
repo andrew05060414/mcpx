@@ -1,0 +1,73 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+
+gitleaks_bin=${GITLEAKS_BIN:-}
+if [ -z "$gitleaks_bin" ] && command -v gitleaks >/dev/null 2>&1; then
+    gitleaks_bin=$(command -v gitleaks)
+fi
+if [ -z "$gitleaks_bin" ] && command -v gitleaks.exe >/dev/null 2>&1; then
+    gitleaks_bin=$(command -v gitleaks.exe)
+fi
+if [ -z "$gitleaks_bin" ] && [ -x /mnt/c/Users/Andrew/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe ]; then
+    gitleaks_bin=/mnt/c/Users/Andrew/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe
+fi
+if [ -z "$gitleaks_bin" ]; then
+    echo "MCPX secret scan requires gitleaks 8.x; install it before committing." >&2
+    exit 1
+fi
+
+repo_arg=$repo_root
+config_path="$repo_root/.gitleaks.toml"
+case "$repo_root" in
+    /mnt/*)
+        if command -v wslpath >/dev/null 2>&1; then
+            repo_arg=$(wslpath -w "$repo_root")
+            config_path=$(wslpath -w "$repo_root/.gitleaks.toml")
+        fi
+        ;;
+    /[A-Za-z]/*)
+        if command -v cygpath >/dev/null 2>&1; then
+            repo_arg=$(cygpath -w "$repo_root")
+            config_path=$(cygpath -w "$repo_root/.gitleaks.toml")
+        fi
+        ;;
+esac
+
+scan_root=$(mktemp -d "$repo_root/.mcpx-secret-scan.XXXXXX")
+trap 'rm -rf "$scan_root"' EXIT INT TERM
+
+while IFS= read -r staged_path; do
+    [ -z "$staged_path" ] && continue
+    if ! git checkout-index --prefix="$scan_root/" -- "$staged_path"; then
+        echo "MCPX secret scan could not materialize staged path: $staged_path" >&2
+        exit 1
+    fi
+done <<EOF
+$(git diff --cached --name-only --diff-filter=ACMR)
+EOF
+
+scan_arg=$scan_root
+case "$scan_root" in
+    /mnt/*)
+        if command -v wslpath >/dev/null 2>&1; then scan_arg=$(wslpath -w "$scan_root"); fi
+        ;;
+    /[A-Za-z]/*)
+        if command -v cygpath >/dev/null 2>&1; then scan_arg=$(cygpath -w "$scan_root"); fi
+        ;;
+esac
+
+if "$gitleaks_bin" dir \
+    --config "$config_path" \
+    --redact \
+    --no-banner \
+    --no-color \
+    "$scan_arg"; then
+    status=0
+else
+    status=$?
+fi
+rm -rf "$scan_root"
+trap - EXIT INT TERM
+exit "$status"

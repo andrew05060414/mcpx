@@ -1,0 +1,92 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+
+gitleaks_bin=${GITLEAKS_BIN:-}
+if [ -z "$gitleaks_bin" ] && command -v gitleaks >/dev/null 2>&1; then
+    gitleaks_bin=$(command -v gitleaks)
+fi
+if [ -z "$gitleaks_bin" ] && command -v gitleaks.exe >/dev/null 2>&1; then
+    gitleaks_bin=$(command -v gitleaks.exe)
+fi
+if [ -z "$gitleaks_bin" ] && [ -x /mnt/c/Users/Andrew/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe ]; then
+    gitleaks_bin=/mnt/c/Users/Andrew/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe
+fi
+if [ -z "$gitleaks_bin" ]; then
+    echo "MCPX secret scan requires gitleaks 8.x; install it before pushing." >&2
+    exit 1
+fi
+
+repo_arg=$repo_root
+config_path="$repo_root/.gitleaks.toml"
+case "$repo_root" in
+    /mnt/*)
+        if command -v wslpath >/dev/null 2>&1; then
+            repo_arg=$(wslpath -w "$repo_root")
+            config_path=$(wslpath -w "$repo_root/.gitleaks.toml")
+        fi
+        ;;
+    /[A-Za-z]/*)
+        if command -v cygpath >/dev/null 2>&1; then
+            repo_arg=$(cygpath -w "$repo_root")
+            config_path=$(cygpath -w "$repo_root/.gitleaks.toml")
+        fi
+        ;;
+esac
+
+zero_oid=$(printf '%040d' 0)
+status=0
+remote_baseline_loaded=false
+remote_commits=
+
+# A new branch has no old tip. Subtract only commits advertised by this
+# destination, never local refs or another remote's tracking branches.
+load_remote_baseline() {
+    advertised=$(git ls-remote --heads --tags "$2") || {
+        echo "MCPX secret scan could not inspect the destination remote." >&2
+        return 1
+    }
+    for tip in $(printf '%s\n' "$advertised" | awk '{print $1}' | sort -u); do
+        if ! git cat-file -e "$tip" 2>/dev/null; then
+            git fetch --quiet --no-tags --no-write-fetch-head "$2" "$tip" || {
+                echo "MCPX secret scan could not load a destination object." >&2
+                return 1
+            }
+        fi
+        # Tags may point to non-commit objects; these do not exclude history.
+        if commit=$(git rev-parse --verify "$tip^{commit}" 2>/dev/null); then
+            remote_commits="$remote_commits $commit"
+        fi
+    done
+    remote_baseline_loaded=true
+}
+
+while IFS=' ' read -r local_ref local_oid remote_ref remote_oid; do
+    [ -z "$local_ref" ] && continue
+    [ "$local_oid" = "$zero_oid" ] && continue
+
+    if [ "$remote_oid" = "$zero_oid" ]; then
+        if [ "$remote_baseline_loaded" = false ]; then
+            load_remote_baseline "$@" || exit 1
+        fi
+        log_opts="$local_oid"
+        if [ -n "$remote_commits" ]; then
+            log_opts="$log_opts --not$remote_commits"
+        fi
+    else
+        log_opts="$remote_oid..$local_oid"
+    fi
+
+    if ! "$gitleaks_bin" git \
+        --log-opts="$log_opts" \
+        --config "$config_path" \
+        --redact \
+        --no-banner \
+        --no-color \
+        "$repo_arg"; then
+        status=1
+    fi
+done
+
+exit "$status"
