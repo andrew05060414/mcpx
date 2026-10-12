@@ -22,9 +22,12 @@ import (
 func (r *Runtime) addTool(s *mcp.Server, tool mcp.Tool, handler mcp.ToolHandler) {
 	tool = withEmbeddedActivitySchema(tool)
 	// OutputSchema describes structuredContent, not the larger ARC metadata
-	// envelope. The shared ARC contract stays identical across tools while
-	// hard limits are attached from the same source used by runtime capabilities.
-	tool.OutputSchema = outputSchemaForTool(tool.Name)
+	// envelope.
+	if output := outputSchemaForTool(tool.Name); len(output) > 0 {
+		tool.OutputSchema = output
+	} else {
+		tool.OutputSchema = nil
+	}
 	instrumented := r.instrumentTool(tool.Name, handler)
 	if r.toolHandlers == nil {
 		r.toolHandlers = map[string]mcp.ToolHandler{}
@@ -54,21 +57,10 @@ func (r *Runtime) addTool(s *mcp.Server, tool mcp.Tool, handler mcp.ToolHandler)
 }
 
 func outputSchemaForTool(toolName string) json.RawMessage {
-	limits, hasLimits := publishedLimits()[toolName]
 	if toolName == "mcp_tool" {
-		// list/describe still return MCPX's ARC object, while call is a payload-
-		// transparent proxy and therefore may return any JSON value allowed by
-		// the selected upstream tool's structuredContent contract.
-		schema := map[string]any{
-			"$id":         "mcpx.mcp_tool_result.v1",
-			"description": "mcp_tool list/describe return MCPX metadata; call forwards upstream structuredContent unchanged and may return any JSON value",
-		}
-		if hasLimits {
-			schema["x-mcpx-limits"] = limits
-		}
-		encoded, _ := json.Marshal(schema)
-		return json.RawMessage(encoded)
+		return nil
 	}
+	limits, hasLimits := publishedLimits()[toolName]
 	base := arc.OutputSchema()
 	if !hasLimits {
 		return base
@@ -156,6 +148,11 @@ func (r *Runtime) instrumentTool(name string, handler mcp.ToolHandler) mcp.ToolH
 		}
 		internalOperationStep := isOperationChild(callCtx)
 		observationRequest, observationParseErr := r.parseEnv(callCtx, req)
+		if observationParseErr == nil && name != "session" && strings.TrimSpace(observationRequest.RemoteSessionID) == "" {
+			if principal, principalErr := r.principalFromContext(callCtx); principalErr == nil {
+				observationRequest.RemoteSessionID = r.boundRemoteSessionID(callCtx, principal)
+			}
+		}
 		if observationParseErr == nil {
 			r.touchRemoteSessionActivity(callCtx, observationRequest)
 		}
@@ -198,6 +195,14 @@ func (r *Runtime) instrumentTool(name string, handler mcp.ToolHandler) mcp.ToolH
 				result.IsError = true
 			}
 		}
+		// When this MCP transport already carries the Remote Session binding, keep
+		// the session identifier out of model-facing business data and continuation
+		// arguments. Explicit remote_session_id calls keep their original payload.
+		if name != "session" && runtime.TransportSessionID != "" {
+			if _, explicit := arguments["remote_session_id"]; !explicit && result != nil {
+				stripModelRemoteSessionIDs(result.StructuredContent)
+			}
+		}
 		// Every handler, including transparent upstream MCP calls, crosses the
 		// same outbound redaction boundary before ARC wrapping or transport.
 		result = r.sanitizePublicToolResult(result)
@@ -211,7 +216,7 @@ func (r *Runtime) instrumentTool(name string, handler mcp.ToolHandler) mcp.ToolH
 				RequestID: runtime.RequestID, TraceID: runtime.TraceID, SpanID: runtime.SpanID,
 				Context: arc.Context{
 					Purpose: firstSemanticPurpose(observationRequest), Activity: activity,
-					PlanID: observationRequest.PlanID, PlanTaskID: observationRequest.PlanTaskID, ExecutionTaskID: observationRequest.ExecutionTaskID, OperationID: observationRequest.OperationID,
+					PlanID: observationRequest.PlanID, PlanTaskID: observationRequest.PlanTaskID, ExecutionTaskID: observationRequest.ExecutionTaskID,
 				},
 				Timing: arc.Timing{
 					StartedAtMs: timing.StartedAtMs, ReceivedAtMs: timing.ReceivedAtMs,
@@ -227,6 +232,24 @@ func (r *Runtime) instrumentTool(name string, handler mcp.ToolHandler) mcp.ToolH
 			logToolCall(name, runtime, status, timing)
 		}
 		return result, err
+	}
+}
+
+func stripModelRemoteSessionIDs(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		delete(typed, "remote_session_id")
+		for _, child := range typed {
+			stripModelRemoteSessionIDs(child)
+		}
+	case []any:
+		for _, child := range typed {
+			stripModelRemoteSessionIDs(child)
+		}
+	case []map[string]any:
+		for _, child := range typed {
+			stripModelRemoteSessionIDs(child)
+		}
 	}
 }
 

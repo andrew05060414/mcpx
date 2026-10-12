@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -958,7 +958,7 @@ func newID(prefix string) string {
 	if _, err := rand.Read(value[:]); err != nil {
 		return prefix + fmt.Sprintf("%x", time.Now().UnixNano())
 	}
-	return prefix + hex.EncodeToString(value[:])
+	return prefix + base64.RawURLEncoding.EncodeToString(value[:])
 }
 
 func uniqueStrings(values []string) []string {

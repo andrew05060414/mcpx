@@ -12,7 +12,7 @@ import (
 	"mcpx/internal/remotesession"
 )
 
-const cleanCoreCapabilityVersion = "clean-core-p10"
+const cleanCoreCapabilityVersion = "clean-core-p13"
 
 const clientProtocolVersion = "2"
 
@@ -52,7 +52,8 @@ func clientProtocolRevision() string { return hashRevision(clientProtocolCapabil
 func capabilityGroups() map[string][]string {
 	return map[string][]string{
 		"core":    {"workspace", "session", "read", "edit", "move_out", "observe", "progress", "execute", "plan", "artifact", "skill_tool", "mcp_tool"},
-		"support": {"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide"},
+		"history": {"history_search", "history_peek", "history_show", "history_list", "history_stats"},
+		"support": {"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "browser", "screenshot_capture", "secret_provide"},
 		"control": {
 			"ai_usage_get_status",
 			"multica_list_executions", "multica_get_execution", "multica_list_agents",
@@ -60,6 +61,9 @@ func capabilityGroups() map[string][]string {
 			"plan_run_grant",
 			"multica_assign_execution", "multica_retry_execution", "multica_request_review",
 			"multica_update_status", "github_comment",
+			"multica_get_agent", "multica_create_agent", "multica_update_agent", "multica_archive_agent",
+			"multica_list_runtimes", "multica_list_projects", "multica_dispatch_task", "multica_get_issue",
+			"multica_comment_issue", "multica_list_runs", "multica_get_run_messages", "multica_rerun_task", "multica_cancel_task",
 		},
 	}
 }
@@ -95,6 +99,7 @@ var toolCapabilityDefinitions = []toolCapabilityDefinition{
 	{Name: "runtime_read", Domain: "runtime"},
 	{Name: "environment_read", Domain: "environment"},
 	{Name: "environment", Domain: "environment", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
+	{Name: "browser", Domain: "browser", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "screenshot_capture", Domain: "screenshot", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "secret_provide", Domain: "secrets", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "ai_usage_get_status", Domain: "ai_usage"},
@@ -108,6 +113,24 @@ var toolCapabilityDefinitions = []toolCapabilityDefinition{
 	{Name: "multica_request_review", Domain: "multica", Roles: []string{"owner", "editor"}},
 	{Name: "multica_update_status", Domain: "multica", Roles: []string{"owner", "editor"}},
 	{Name: "github_comment", Domain: "github", Roles: []string{"owner", "editor"}},
+	{Name: "history_search", Domain: "history"},
+	{Name: "history_peek", Domain: "history"},
+	{Name: "history_show", Domain: "history"},
+	{Name: "history_list", Domain: "history"},
+	{Name: "history_stats", Domain: "history"},
+	{Name: "multica_get_agent", Domain: "multica"},
+	{Name: "multica_create_agent", Domain: "multica"},
+	{Name: "multica_update_agent", Domain: "multica"},
+	{Name: "multica_archive_agent", Domain: "multica"},
+	{Name: "multica_list_runtimes", Domain: "multica"},
+	{Name: "multica_list_projects", Domain: "multica"},
+	{Name: "multica_dispatch_task", Domain: "multica"},
+	{Name: "multica_get_issue", Domain: "multica"},
+	{Name: "multica_comment_issue", Domain: "multica"},
+	{Name: "multica_list_runs", Domain: "multica"},
+	{Name: "multica_get_run_messages", Domain: "multica"},
+	{Name: "multica_rerun_task", Domain: "multica"},
+	{Name: "multica_cancel_task", Domain: "multica"},
 }
 
 func toolSupportsEmbeddedActivity(name string) bool {

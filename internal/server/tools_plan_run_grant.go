@@ -33,7 +33,7 @@ func (r *Runtime) registerPlanRunGrantTool(s *mcp.Server, confirm map[string]any
 		map[string]any{
 			"remote_session_id":   stringSchema("Persistent Remote Session ID"),
 			"purpose":             stringSchema("Why this grant action is needed"),
-			"action":              enumSchema("Grant action", "create", "get", "revoke", "report_usage"),
+			"action":              enumSchema("授权操作：create 新建、get 读取、revoke 撤销、report_usage 上报用量", "create", "get", "revoke", "report_usage"),
 			"plan_id":             stringSchema("Exact Plan ID returned by plan create/read"),
 			"repositories":        arraySchema(map[string]any{"type": "string"}, "create: allowed repositories as owner/name (GitHub URLs are normalized); no wildcards"),
 			"auto_merge_max_risk": enumSchema("create: highest risk level that may auto-merge; signoff is never allowed", plan.AutoMergeRiskCeilings()...),

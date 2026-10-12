@@ -221,11 +221,11 @@ func (r *Runtime) registerMulticaTools(s *mcp.Server) {
 		"multica_get_run_messages",
 		"查询 Multica 某个执行 Task 的实时输出日志和 Agent 对话消息。",
 		map[string]any{
-			"task_id":  stringSchema("执行 Task ID"),
-			"issue_id": stringSchema("可选的 Issue ID（用于辅助解析短 Task ID）"),
-			"since":    numberSchema("可选的消息起始序号"),
+			"execution_task_id": stringSchema("执行 Task ID"),
+			"issue_id":          stringSchema("可选的 Issue ID（用于辅助解析短 Task ID）"),
+			"since":             numberSchema("可选的消息起始序号"),
 		},
-		[]string{"task_id"},
+		[]string{"execution_task_id"},
 		readOnlyToolAnnotation,
 	), r.toolMulticaGetRunMessages)
 
@@ -245,10 +245,10 @@ func (r *Runtime) registerMulticaTools(s *mcp.Server) {
 		"multica_cancel_task",
 		"取消或中断 Multica 正在运行或排队中的任务（即时中断正在运行的 Agent）。",
 		map[string]any{
-			"task_id":  stringSchema("执行 Task ID (UUID 或短前缀)"),
-			"issue_id": stringSchema("可选的 Issue ID"),
+			"execution_task_id": stringSchema("执行 Task ID (UUID 或短前缀)"),
+			"issue_id":          stringSchema("可选的 Issue ID"),
 		},
-		[]string{"task_id"},
+		[]string{"execution_task_id"},
 		mutatingToolAnnotation,
 	), r.toolMulticaCancelTask)
 }
@@ -490,9 +490,9 @@ func (r *Runtime) toolMulticaListRuns(ctx context.Context, req *mcp.CallToolRequ
 
 func (r *Runtime) toolMulticaGetRunMessages(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	payload := mcpresult.Arguments(req)
-	taskID := stringPayload(payload, "task_id")
+	taskID := stringPayload(payload, "execution_task_id")
 	if taskID == "" {
-		return nil, fmt.Errorf("task_id is required")
+		return nil, fmt.Errorf("execution_task_id is required")
 	}
 
 	cliArgs := []string{"issue", "run-messages", taskID, "--output", "json"}
@@ -525,9 +525,9 @@ func (r *Runtime) toolMulticaRerunTask(ctx context.Context, req *mcp.CallToolReq
 
 func (r *Runtime) toolMulticaCancelTask(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	payload := mcpresult.Arguments(req)
-	taskID := stringPayload(payload, "task_id")
+	taskID := stringPayload(payload, "execution_task_id")
 	if taskID == "" {
-		return nil, fmt.Errorf("task_id is required")
+		return nil, fmt.Errorf("execution_task_id is required")
 	}
 
 	cliArgs := []string{"issue", "cancel-task", taskID, "--output", "json"}

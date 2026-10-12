@@ -110,22 +110,31 @@ func TestExecuteSchemaExposesAGYContinuationBranch(t *testing.T) {
 	if err := json.Unmarshal(mcpresult.ToolSchemaJSON(registered), &schema); err != nil {
 		t.Fatal(err)
 	}
-	branches, _ := schema["oneOf"].([]any)
-	for _, raw := range branches {
-		branch, _ := raw.(map[string]any)
-		properties, _ := branch["properties"].(map[string]any)
-		action, _ := properties["action"].(map[string]any)
-		if action["const"] != "agy_continue" {
-			continue
-		}
-		for _, field := range []string{"resume", "conversation_id", "prompt", "model", "effort", "mode"} {
-			if properties[field] == nil {
-				t.Fatalf("agy_continue schema missing %q: %s", field, mcpresult.ToolSchemaJSON(registered))
-			}
-		}
-		return
+	if _, hasOneOf := schema["oneOf"]; hasOneOf {
+		t.Fatalf("execute schema must remain flat: %s", mcpresult.ToolSchemaJSON(registered))
 	}
-	t.Fatalf("execute schema has no agy_continue branch: %s", mcpresult.ToolSchemaJSON(registered))
+	properties, _ := schema["properties"].(map[string]any)
+	action, _ := properties["action"].(map[string]any)
+	enums, _ := action["enum"].([]any)
+	found := false
+	for _, value := range enums {
+		if value == "agy_continue" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("execute schema has no agy_continue action: %s", mcpresult.ToolSchemaJSON(registered))
+	}
+	for _, field := range []string{"resume", "conversation_id", "prompt", "model", "effort", "mode", "dangerously_skip_permissions"} {
+		if properties[field] == nil {
+			t.Fatalf("agy_continue schema missing %q: %s", field, mcpresult.ToolSchemaJSON(registered))
+		}
+	}
+	actionDescription, _ := action["description"].(string)
+	if !strings.Contains(actionDescription, "agy_continue") {
+		t.Fatalf("execute action description omits agy_continue: %s", actionDescription)
+	}
 }
 
 func TestAGYContinuationHandlerUsesWorkspaceAndRedactsPrompt(t *testing.T) {

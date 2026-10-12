@@ -497,6 +497,11 @@ var migrations = []string{
 			state_event_id = 'operation:' || hex(id) || ':' || (state_sequence + 1)
 			WHERE id = NEW.operation_id AND state NOT IN ('succeeded','failed','interrupted','cancelled');
 	END;`,
+	`CREATE TABLE artifact_blobs (
+		artifact_id TEXT PRIMARY KEY,
+		content BLOB NOT NULL,
+		FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
+	);`,
 	`CREATE TABLE IF NOT EXISTS plan_task_multica_dispatches (
 		plan_id TEXT NOT NULL,
 		task_id TEXT NOT NULL PRIMARY KEY,
