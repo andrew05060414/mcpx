@@ -47,7 +47,10 @@ func TestRedactTextRedactsCredentialHeadersAndAssignments(t *testing.T) {
 	}{
 		{name: "authorization bearer header", input: "Authorization: Bearer header-secret", want: "Authorization: Bearer [REDACTED]"},
 		{name: "password assignment", input: "password=plain-password", want: "password=[REDACTED]"},
+		{name: "access token assignment", input: "access_token=plain-access-token", want: "access_token=[REDACTED]"},
 		{name: "token assignment", input: `token: "plain-token"`, want: `token: "[REDACTED]"`},
+		{name: "github token", input: "ghp_12345678901234567890", want: "[REDACTED]"},
+		{name: "aws access key", input: "AKIA1234567890ABCDEF", want: "[REDACTED]"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -99,5 +102,27 @@ func TestSanitizeJSONReturnsValidBoundedJSON(t *testing.T) {
 	}
 	if strings.Contains(string(clean), "value") {
 		t.Fatalf("secret leaked: %s", clean)
+	}
+}
+
+func TestSanitizePublicRedactsSyntheticCredentialAndKeepsConfirmationHandle(t *testing.T) {
+	value := map[string]any{
+		"token":              "PX363_SYNTHETIC_SECRET_0123456789",
+		"nested":             map[string]any{"api_key": "PX363_SYNTHETIC_SECRET_0123456789"},
+		"confirmation_token": "ct_keep_for_protocol",
+	}
+	clean, truncated := SanitizePublic(value, 1024)
+	if truncated {
+		t.Fatal("small public value must not be truncated")
+	}
+	encoded, err := json.Marshal(clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "PX363_SYNTHETIC_SECRET_0123456789") {
+		t.Fatalf("synthetic credential leaked: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), "ct_keep_for_protocol") {
+		t.Fatalf("confirmation handle was removed: %s", encoded)
 	}
 }

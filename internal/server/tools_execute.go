@@ -24,6 +24,8 @@ func (r *Runtime) toolExecute(ctx context.Context, req *mcp.CallToolRequest) (*m
 			return r.withCleanIdempotency(ctx, req, "execute", mcpresult.Arguments(req), r.toolCommandExecute)
 		}
 		return r.toolCommandExecute(ctx, req)
+	case "agy_continue":
+		return r.toolAGYContinue(ctx, req)
 	case "attach", "stop", "stdin":
 		forwarded := forwardedRequest(req, map[string]any{"action": action})
 		return r.withCleanIdempotency(ctx, forwarded, "execute", mcpresult.Arguments(req), r.toolTaskManage)

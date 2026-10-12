@@ -57,17 +57,32 @@ type Plan struct {
 }
 
 type Task struct {
-	ID          string     `json:"plan_task_id"`
-	PlanID      string     `json:"plan_id"`
-	Ordinal     int        `json:"ordinal"`
-	Title       string     `json:"title"`
-	Description string     `json:"description,omitempty"`
-	Status      string     `json:"status"`
-	DependsOn   []string   `json:"depends_on,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	Evidence    []Evidence `json:"evidence,omitempty"`
+	ID              string           `json:"plan_task_id"`
+	PlanID          string           `json:"plan_id"`
+	Ordinal         int              `json:"ordinal"`
+	Title           string           `json:"title"`
+	Description     string           `json:"description,omitempty"`
+	Status          string           `json:"status"`
+	DependsOn       []string         `json:"depends_on,omitempty"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+	CompletedAt     *time.Time       `json:"completed_at,omitempty"`
+	Evidence        []Evidence       `json:"evidence,omitempty"`
+	MulticaDispatch *MulticaDispatch `json:"multica_dispatch,omitempty"`
+}
+
+// MulticaDispatch is the durable link from a Plan Task to its execution Issue.
+type MulticaDispatch struct {
+	PlanID          string    `json:"plan_id"`
+	PlanTaskID      string    `json:"plan_task_id"`
+	IssueID         string    `json:"issue_id,omitempty"`
+	IssueIdentifier string    `json:"issue_identifier,omitempty"`
+	Status          string    `json:"status"`
+	AssigneeID      string    `json:"assignee_id"`
+	ProjectID       string    `json:"project_id,omitempty"`
+	Priority        string    `json:"priority,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Evidence struct {

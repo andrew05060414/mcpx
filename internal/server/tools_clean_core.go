@@ -334,4 +334,10 @@ func (r *Runtime) registerCleanCoreTools(s *mcp.Server) {
 	}, []string{"remote_session_id", "current"}, sessionToolAnnotation), r.toolProgress)
 
 	r.registerConsolidatedToolsCatalog(s)
+	r.registerMulticaTools(s)
+	r.registerHistoryTools(s)
+	// Additive ArcKnights attachments. Keep local registerMulticaTools /
+	// registerHistoryTools *before* this so addToolIfAbsent does not
+	// replace Andrew-specific tools_multica.go / tools_history.go names.
+	r.registerArcControlPlaneTools(s)
 }

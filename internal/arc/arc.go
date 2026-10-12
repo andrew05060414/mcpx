@@ -922,34 +922,19 @@ func OutputSchema() json.RawMessage {
 }
 
 func buildOutputSchema() json.RawMessage {
-	resultTypes := []string{
-		"text", "markdown", "search_result", "code_change", "table", "file_tree", "log", "error",
-		"diagram", "diagram_collection", "plan", "plan_task", "delivery",
-	}
-	typeValues := make([]any, 0, len(resultTypes))
-	for _, resultType := range resultTypes {
-		typeValues = append(typeValues, resultType)
-	}
 	schema := map[string]any{
 		// This schema is repeated once per tool in tools/list. Keep the shared
-		// result contract explicit while leaving tool-specific data open; the
-		// result type and the actual data fields are the stable discriminator.
+		// envelope explicit and compact; tool-specific data and context fields
+		// remain open so this contract does not multiply the prompt catalog.
 		"$id": "mcpx.structured_content.v" + Version, "type": "object",
 		"required":             []string{"status", "type", "context", "data"},
 		"additionalProperties": false,
 		"properties": map[string]any{
-			"status": map[string]any{"type": "string", "enum": []string{"succeeded", "accepted", "waiting_confirmation", "interrupted", "failed"}},
-			"type":   map[string]any{"type": "string", "enum": typeValues},
-			"context": map[string]any{
-				"type": "object", "additionalProperties": false,
-				"properties": map[string]any{
-					"purpose": map[string]any{"type": "string"},
-					"plan_id": map[string]any{"type": "string"}, "plan_task_id": map[string]any{"type": "string"},
-					"execution_task_id": map[string]any{"type": "string"}, "operation_id": map[string]any{"type": "string"},
-				},
-			},
-			"data":    map[string]any{"type": "object", "additionalProperties": true},
-			"error":   map[string]any{"type": "object", "additionalProperties": true},
+			"status":  map[string]any{"type": "string"},
+			"type":    map[string]any{"type": "string"},
+			"context": map[string]any{"type": "object"},
+			"data":    map[string]any{"type": "object"},
+			"error":   map[string]any{"type": "object"},
 			"hints":   map[string]any{"type": "object"},
 			"actions": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 		},
