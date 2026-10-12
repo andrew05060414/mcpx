@@ -124,6 +124,17 @@ func TestGitHubCommentResolvesLinkedIssueAndRedactsTokens(t *testing.T) {
 		}
 		return controlCLIResult{Args: append([]string{bin}, argv...), Stderr: "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz012345", ExitCode: 1}, fmt.Errorf("gh failed token=ghp_abcdefghijklmnopqrstuvwxyz012345")
 	}
+	origPrivate := githubPrivateCLI
+	t.Cleanup(func() { githubPrivateCLI = origPrivate })
+	githubPrivateCLI = func(_ context.Context, _ string, argv, env []string, input string) (string, error) {
+		if argv[0] == "auth" {
+			return "fake-bot-credential", nil
+		}
+		if strings.Contains(strings.Join(argv, " "), "user --jq") {
+			return "NakhimovBot", nil
+		}
+		return `{"html_url":"https://github.com/andrew05060414/pxread/issues/677#issuecomment-1","user":{"login":"NakhimovBot"}}`, nil
+	}
 	rt := &Runtime{}
 	response := callEnvelope(t, rt.toolGitHubComment, context.Background(), map[string]any{
 		"execution_id": "iss-1", "body": "shipped from MCPX", "user_confirmed": true,

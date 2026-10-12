@@ -99,7 +99,7 @@ func (r *Runtime) registerMulticaControlTools(s *mcp.Server) {
 		[]string{"execution_id", "status"}, arcControlWriteAnnotation), r.toolMulticaUpdateStatus)
 
 	r.addToolIfAbsent(s, cleanCoreTool("github_comment",
-		"Comment on a linked GitHub Issue or PR using the already-logged-in `gh` CLI. Write-gated: requires user_confirmed=true. Pass repo+number, or execution_id to resolve github_repo / github_issue_number metadata. Tokens are never returned.",
+		"Comment on a linked GitHub Issue or PR as NakhimovBot with explicit local keyring credentials and fail-closed identity verification. Write-gated: requires user_confirmed=true. Pass repo+number, or execution_id to resolve github_repo / github_issue_number metadata. Tokens are never returned.",
 		map[string]any{
 			"execution_id":   stringSchema("Optional Multica execution used to resolve linked GitHub Issue/PR"),
 			"repo":           stringSchema("owner/name repository; required unless execution metadata supplies github_repo"),
@@ -327,9 +327,6 @@ func (r *Runtime) toolGitHubComment(ctx context.Context, req *mcp.CallToolReques
 		kind = "issue"
 	}
 	cli, err := runGHComment(ctx, kind, repo, number, body)
-	if err != nil && target == "auto" {
-		cli, err = runGHComment(ctx, "pr", repo, number, body)
-	}
 	if err != nil {
 		return r.controlError(ctx, req, "GITHUB_CLI_FAILED", err)
 	}
@@ -417,17 +414,7 @@ func runMulticaJSON(ctx context.Context, attempts [][]string) (any, controlCLIRe
 }
 
 func runGHComment(ctx context.Context, kind, repo string, number int, body string) (controlCLIResult, error) {
-	bin, err := controlLookPath(firstNonEmpty(os.Getenv("MCPX_GH_BIN"), "gh"))
-	if err != nil {
-		return controlCLIResult{}, fmt.Errorf("gh CLI not found on PATH")
-	}
-	verb := "issue"
-	if kind == "pr" {
-		verb = "pr"
-	}
-	argv := []string{verb, "comment", fmt.Sprintf("%d", number), "--repo", repo, "--body", body}
-	result, runErr := controlRunCLI(ctx, bin, argv)
-	return result, runErr
+	return runBotGitHubComment(ctx, kind, repo, number, body)
 }
 
 func runControlCLI(ctx context.Context, bin string, argv []string) (controlCLIResult, error) {
