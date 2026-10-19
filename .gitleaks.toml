@@ -15,3 +15,10 @@ description = "MCPX or provider token prefix"
 regex = '''(?i)\b((?:mul_|mat_|gho_|ghp_|sk-)[a-z0-9][a-z0-9_-]{7,})\b'''
 secretGroup = 1
 keywords = ["mul_", "mat_", "gho_", "ghp_", "sk-"]
+
+[[rules]]
+id = "cloudflare-tunnel-token"
+description = "Cloudflare Tunnel token (base64 JSON starting with {\"a\":\")"
+regex = '''(eyJhIjoi[A-Za-z0-9+/=_-]{60,})'''
+secretGroup = 1
+keywords = ["eyJhIjoi"]
