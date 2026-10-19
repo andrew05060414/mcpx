@@ -7,7 +7,9 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 $mcpxDir = "D:\Andrew\Code\Github\mcpx"
 $binDir = "$mcpxDir\bin"
 $cfExe = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
-$token = "eyJhIjoiZThmMzBmOTkyMzQxYmVmZDIyNzBmNWEwN2MyZjI2MTUiLCJ0IjoiN2EzZGQyYmMtNzZiMy00NjAxLWJmYTUtZGI1YWM0OGUxYWM4IiwicyI6Ik9ERXpPR1U1WVRVdE1HUmlOeTAwTjJFeUxXSmhPR0l0T0Rnd09HWm1NbVkyWVRBMiJ9"
+$tokenFile = "D:\Data\secrets\cloudflared-mcpx-arknights.txt"
+if (-not (Test-Path $tokenFile)) { throw "缺少令牌文件：$tokenFile" }
+$token = (Get-Content $tokenFile -Raw).Trim()
 
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "         MCPX + Cloudflare Windows Service Installer            " -ForegroundColor Cyan
