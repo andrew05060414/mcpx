@@ -94,8 +94,13 @@ func TestHistoryToolsRegistered(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"history_peek", "history_stats"} {
-		if _, ok := toolMap[name]; ok {
-			t.Errorf("retired tool %q must not be registered", name)
+		tool, ok := toolMap[name]
+		if !ok {
+			t.Errorf("compat alias %q must stay registered", name)
+			continue
+		}
+		if !strings.Contains(tool.Description, "已弃用") {
+			t.Errorf("compat alias %q should be marked deprecated: %s", name, tool.Description)
 		}
 	}
 }

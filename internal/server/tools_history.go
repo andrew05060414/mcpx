@@ -94,6 +94,27 @@ func (r *Runtime) registerHistoryTools(s *mcp.Server) {
 		nil,
 		readOnlyToolAnnotation,
 	), r.toolHistoryProjects)
+
+	// 兼容别名：已连接的客户端（网页 ChatGPT 连接器）可能缓存了旧工具名，
+	// 保留 history_peek / history_stats 并转到新实现，避免刷新连接器前调用失败。
+	r.addTool(s, cleanCoreTool(
+		"history_peek",
+		"（已弃用，请改用 history_get）等同 history_get：读取会话元数据与信号。旧版的首尾提问、文件和命令摘要已不再提供。",
+		map[string]any{
+			"conversation_id": stringSchema("会话 ID（UUID）"),
+			"chars":           numberSchema("已忽略，仅为兼容旧调用保留"),
+		},
+		[]string{"conversation_id"},
+		readOnlyToolAnnotation,
+	), r.toolHistoryGet)
+
+	r.addTool(s, cleanCoreTool(
+		"history_stats",
+		"（已弃用，请改用 history_projects）等同 history_projects：列出各项目及其会话数。",
+		map[string]any{},
+		nil,
+		readOnlyToolAnnotation,
+	), r.toolHistoryProjects)
 }
 
 // historyLimit 读取并限制数量参数；缺省返回 def。

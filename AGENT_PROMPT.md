@@ -21,7 +21,7 @@ Search prior discussions, architecture decisions, and code forensics across Clau
 - `history_show(conversation_id, from=..., limit=50, around=..., before=..., after=..., direction="asc|desc", role="user,assistant")`: Read message windows (use only when `history_get` lacks required detail).
 - `history_list(agent=..., project=..., since=..., date_from=..., date_to=..., limit=10)`: Browse recent sessions.
 - `history_projects()`: Projects with session counts. Replaces the old `history_stats`.
-- Removed with hstry: `history_peek` (the first/last-prompt, touched-files and commands summary has no AgentsView equivalent; use `history_get` plus `history_show`), `history_stats`, and the `scope`, `role` (search), `after`/`before`, `source`/`workspace` search parameters (now `agent`/`project`/`since`/`date_from`/`date_to`).
+- Deprecated aliases kept for cached clients: `history_peek` now behaves exactly like `history_get` (the old first/last-prompt, touched-files and commands summary has no AgentsView equivalent; use `history_get` plus `history_show`), and `history_stats` behaves like `history_projects`. Prefer the new names. Removed with hstry: the `scope`, `role` (search), `after`/`before`, `source`/`workspace` search parameters (now `agent`/`project`/`since`/`date_from`/`date_to`).
 - Requires the `chronicle` command: found via the `CHRONICLE_BIN` environment variable, then `PATH`, then `~/.local/bin`.
 
 #### 3. Multica Task & Agent Orchestration
