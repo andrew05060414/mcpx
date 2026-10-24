@@ -28,7 +28,11 @@ func TestMain(m *testing.M) {
 func fakeChronicleMain(mode string) int {
 	switch mode {
 	case "echo":
-		encoded, _ := json.Marshal(map[string]any{"args": os.Args[1:], "pythonutf8": os.Getenv("PYTHONUTF8")})
+		body := map[string]any{"args": os.Args[1:], "pythonutf8": os.Getenv("PYTHONUTF8")}
+		if len(os.Args) > 1 && os.Args[1] == "messages" {
+			body["messages"] = []any{}
+		}
+		encoded, _ := json.Marshal(body)
 		fmt.Println(string(encoded))
 	case "text":
 		fmt.Println("not json at all")
@@ -142,16 +146,16 @@ func TestBuildHistoryArgs(t *testing.T) {
 		want  []string
 	}{
 		{"search default", buildHistorySearchArgs, `{"query":"hello world"}`,
-			[]string{"search", "--json", "--include-one-shot", "--limit", "8", "--", "hello world"}},
+			[]string{"search", "--json", "--include-one-shot", "--limit", "8", "--fts", "--", "hello world"}},
 		{"search filters+mode", buildHistorySearchArgs,
 			`{"query":"-dash; rm -rf $HOME & \"x\"","mode":"hybrid","limit":3,"agent":"claude","project":"mcpx","since":"2w","date_from":"2026-01-01","date_to":"2026-02-01"}`,
 			[]string{"search", "--json", "--include-one-shot", "--limit", "3", "--hybrid", "--agent", "claude", "--project", "mcpx", "--since", "2w", "--date-from", "2026-01-01", "--date-to", "2026-02-01", "--", `-dash; rm -rf $HOME & "x"`}},
 		{"search any", buildHistorySearchArgs, `{"any":["hstry 退役","chronicle"],"limit":9999}`,
-			[]string{"search", "--json", "--include-one-shot", "--limit", "500", "--any", "hstry 退役", "chronicle"}},
+			[]string{"search", "--json", "--include-one-shot", "--limit", "500", "--fts", "--any", "hstry 退役", "chronicle"}},
 		{"get", buildHistoryGetArgs, `{"conversation_id":" abc-123 "}`,
 			[]string{"get", "--json", "--", "abc-123"}},
 		{"messages default", buildHistoryMessagesArgs, `{"conversation_id":"abc"}`,
-			[]string{"messages", "--json", "--limit", "50", "--", "abc"}},
+			[]string{"messages", "--json", "--limit", "50", "--role", "user,assistant", "--", "abc"}},
 		{"messages window", buildHistoryMessagesArgs,
 			`{"conversation_id":"abc","around":10,"before":2,"after":3,"from":0,"limit":7,"direction":"desc","role":"user,assistant"}`,
 			[]string{"messages", "--json", "--limit", "7", "--from", "0", "--around", "10", "--before", "2", "--after", "3", "--direction", "desc", "--role", "user,assistant", "--", "abc"}},

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -41,10 +42,11 @@ func (r *Runtime) registerHistoryTools(s *mcp.Server) {
 		"history_search",
 		"在 AgentsView 档案库（经 chronicle 命令）中搜索过去在各 AI 工具里的对话、决定和代码。返回匹配片段与会话 ID（UUID）。多个词默认都要出现；用 any 传多个词可改为任意一个出现即可。",
 		filters(map[string]any{
-			"query": stringSchema("搜索关键词或语句；用 any 时省略"),
-			"any":   arraySchema(map[string]any{"type": "string"}, "任意一个词出现即可（OR，纯关键词）；不能与 mode=semantic/hybrid/regex 同用"),
-			"mode":  enumSchema("搜索模式：keyword（默认）、fts（快速分词，仅消息）、semantic（语义）、hybrid（语义加全文）、regex（RE2 正则）", "keyword", "fts", "semantic", "hybrid", "regex"),
-			"limit": numberSchema(fmt.Sprintf("最多返回结果条数（默认 %d，上限 %d）", historySearchDefaultLimit, historyMaxLimit)),
+			"query":  stringSchema("搜索关键词或语句；用 any 时省略"),
+			"any":    arraySchema(map[string]any{"type": "string"}, "任意一个词出现即可（OR，纯关键词）；不能与 mode=semantic/hybrid/regex 同用"),
+			"mode":   enumSchema("搜索模式：keyword（默认）、fts（快速分词，仅消息）、semantic（语义）、hybrid（语义加全文）、regex（RE2 正则）", "keyword", "fts", "semantic", "hybrid", "regex"),
+			"limit":  numberSchema(fmt.Sprintf("最多返回结果条数（默认 %d，上限 %d）", historySearchDefaultLimit, historyMaxLimit)),
+			"cursor": numberSchema("消息级分页游标；原样传入上页 next_cursor。会话去重分页请用原生 MCP search_content"),
 		}),
 		nil,
 		readOnlyToolAnnotation,
@@ -196,6 +198,7 @@ func buildHistorySearchArgs(payload map[string]any) ([]string, error) {
 	mode := stringPayload(payload, "mode")
 	switch mode {
 	case "", "keyword":
+		args = append(args, "--fts")
 	case "fts", "semantic", "hybrid", "regex":
 		if len(anyTerms) > 0 && mode != "fts" {
 			return nil, fmt.Errorf("any 是纯关键词查询，不能与 mode=%s 同用", mode)
@@ -207,6 +210,13 @@ func buildHistorySearchArgs(payload map[string]any) ([]string, error) {
 	args, err := appendHistoryFilters(args, payload)
 	if err != nil {
 		return nil, err
+	}
+	if raw, exists := payload["cursor"]; exists {
+		value, ok := raw.(float64)
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value != math.Trunc(value) || value > 2147483647 {
+			return nil, fmt.Errorf("cursor must be a nonnegative integer")
+		}
+		args = append(args, "--cursor", strconv.Itoa(int(value)))
 	}
 	if len(anyTerms) > 0 {
 		// chronicle 前门把 --any 之后（到下一个以 - 开头的参数为止）的词拼成 OR 查询。
@@ -233,7 +243,11 @@ func buildHistoryMessagesArgs(payload map[string]any) ([]string, error) {
 	for _, n := range []struct{ key, flag string }{
 		{"from", "--from"}, {"around", "--around"}, {"before", "--before"}, {"after", "--after"},
 	} {
-		if value, ok := payload[n.key].(float64); ok && value >= 0 {
+		if raw, exists := payload[n.key]; exists {
+			value, ok := raw.(float64)
+			if !ok || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value != math.Trunc(value) || value > 2147483647 {
+				return nil, fmt.Errorf("%s must be a nonnegative integer", n.key)
+			}
 			args = append(args, n.flag, strconv.Itoa(int(value)))
 		}
 	}
@@ -250,6 +264,8 @@ func buildHistoryMessagesArgs(payload map[string]any) ([]string, error) {
 	}
 	if role != "" {
 		args = append(args, "--role", role)
+	} else {
+		args = append(args, "--role", "user,assistant")
 	}
 	return append(args, "--", id), nil
 }
@@ -267,7 +283,54 @@ func (r *Runtime) runHistory(ctx context.Context, args []string, argErr error, s
 	if err != nil {
 		return nil, err
 	}
+	if len(args) > 0 && args[0] == "messages" {
+		data, err = historyDialogue(data)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return compactToolResult(data, summary), nil
+}
+
+// This compatibility adapter returns only the dialogue projection. All richer
+// retrieval and pagination behavior belongs to the upstream memory MCP.
+func historyDialogue(data any) (any, error) {
+	object, ok := data.(map[string]any)
+	if !ok || object["messages"] == nil {
+		return nil, fmt.Errorf("history_show requires structured messages; use AgentsView memory MCP for a smaller page")
+	}
+	rows, ok := object["messages"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid history messages response")
+	}
+	clean := make([]any, 0, len(rows))
+	for _, row := range rows {
+		message, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := message["role"].(string)
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		projected := map[string]any{}
+		for _, key := range []string{"ordinal", "role", "content", "timestamp", "model", "id", "session_id"} {
+			if value, ok := message[key]; ok {
+				projected[key] = value
+			}
+		}
+		if content, ok := projected["content"].(string); ok {
+			chars := []rune(content)
+			if len(chars) > 2000 {
+				projected["content"] = string(chars[:2000])
+				projected["truncated"] = true
+			}
+		}
+		clean = append(clean, projected)
+	}
+	object["messages"] = clean
+	object["count"] = len(clean)
+	return object, nil
 }
 
 func (r *Runtime) toolHistorySearch(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
