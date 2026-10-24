@@ -142,12 +142,12 @@ func TestBuildHistoryArgs(t *testing.T) {
 		want  []string
 	}{
 		{"search default", buildHistorySearchArgs, `{"query":"hello world"}`,
-			[]string{"search", "--json", "--limit", "8", "--", "hello world"}},
+			[]string{"search", "--json", "--include-one-shot", "--limit", "8", "--", "hello world"}},
 		{"search filters+mode", buildHistorySearchArgs,
 			`{"query":"-dash; rm -rf $HOME & \"x\"","mode":"hybrid","limit":3,"agent":"claude","project":"mcpx","since":"2w","date_from":"2026-01-01","date_to":"2026-02-01"}`,
-			[]string{"search", "--json", "--limit", "3", "--hybrid", "--agent", "claude", "--project", "mcpx", "--since", "2w", "--date-from", "2026-01-01", "--date-to", "2026-02-01", "--", `-dash; rm -rf $HOME & "x"`}},
+			[]string{"search", "--json", "--include-one-shot", "--limit", "3", "--hybrid", "--agent", "claude", "--project", "mcpx", "--since", "2w", "--date-from", "2026-01-01", "--date-to", "2026-02-01", "--", `-dash; rm -rf $HOME & "x"`}},
 		{"search any", buildHistorySearchArgs, `{"any":["hstry 退役","chronicle"],"limit":9999}`,
-			[]string{"search", "--json", "--limit", "500", "--any", "hstry 退役", "chronicle"}},
+			[]string{"search", "--json", "--include-one-shot", "--limit", "500", "--any", "hstry 退役", "chronicle"}},
 		{"get", buildHistoryGetArgs, `{"conversation_id":" abc-123 "}`,
 			[]string{"get", "--json", "--", "abc-123"}},
 		{"messages default", buildHistoryMessagesArgs, `{"conversation_id":"abc"}`,
@@ -156,7 +156,7 @@ func TestBuildHistoryArgs(t *testing.T) {
 			`{"conversation_id":"abc","around":10,"before":2,"after":3,"from":0,"limit":7,"direction":"desc","role":"user,assistant"}`,
 			[]string{"messages", "--json", "--limit", "7", "--from", "0", "--around", "10", "--before", "2", "--after", "3", "--direction", "desc", "--role", "user,assistant", "--", "abc"}},
 		{"list", buildHistoryListArgs, `{"project":"mcpx"}`,
-			[]string{"list", "--json", "--limit", "10", "--project", "mcpx"}},
+			[]string{"list", "--json", "--include-one-shot", "--limit", "10", "--project", "mcpx"}},
 	}
 	for _, tc := range tests {
 		got, err := tc.build(decode(tc.input))

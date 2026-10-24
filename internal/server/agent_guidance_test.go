@@ -35,12 +35,15 @@ func TestAgentGuidanceIsCompactPrincipledContract(t *testing.T) {
 	if !containsAnyString(routing["inspect_source"], "read") || !containsAnyString(routing["inspect_environment"], "environment_read") || !containsAnyString(routing["modify_files"], "edit") {
 		t.Fatalf("canonical routing=%+v", routing)
 	}
+	if !containsAnyString(routing["conversation_archive"], "mcp_tool") {
+		t.Fatalf("conversation archive must route through upstream MCP: %+v", routing)
+	}
 	rules, ok := guidance["rules"].([]string)
 	if !ok || len(rules) < 8 || len(rules) > 16 {
 		t.Fatalf("guidance should stay compact: %T %+v", guidance["rules"], guidance["rules"])
 	}
 	joined := strings.Join(rules, "\n")
-	for _, required := range []string{"structuredContent", "不要猜测", "canonical tool", "STALE_REVISION", "recovery", "move_out", "purpose", "activity", "必须携带 activity.intent", "activity.evidence", "activity.next", "progress", "最终回复前", "最小充分证据"} {
+	for _, required := range []string{"structuredContent", "不要猜测", "canonical tool", "STALE_REVISION", "recovery", "move_out", "purpose", "activity", "必须携带 activity.intent", "activity.evidence", "activity.next", "progress", "最终回复前", "最小充分证据", "runtime_read(view=capabilities)", "AgentsView 原生 MCP", "history_* 仅作为原有客户端的兼容入口"} {
 		if !strings.Contains(joined, required) {
 			t.Errorf("compact guidance missing principle %q: %s", required, joined)
 		}

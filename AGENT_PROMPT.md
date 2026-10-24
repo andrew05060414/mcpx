@@ -14,15 +14,10 @@ You are connected to Andrew's local Windows 11 development environment via the A
 - **GitHub CLI**: `gh` is pre-authenticated as `andrew05060414` for PRs, issues, and repository operations.
 - **Toolchains**: Python (`uv`/`pytest`), Go, Node.js, Git.
 
-#### 2. AI Conversation Archive (AgentsView via `chronicle`)
-Search prior discussions, architecture decisions, and code forensics across Claude Code, Codex, Cursor, OpenCode, Antigravity, and more. These tools forward to the local `chronicle` command (front door of the AgentsView archive; the old hstry archive was retired on 2026-10-17). Session IDs are UUIDs.
-- `history_search(query | any=[...], mode="keyword|fts|semantic|hybrid|regex", agent=..., project=..., since="2w", date_from=..., date_to=..., limit=8)`: Search past chats; returns ranked hits with session IDs. Use `any` (list of words) for "any word matches" (OR).
-- `history_get(conversation_id)`: **Recommended first look** — low-token session metadata and signals (project, agent, time span, message counts, first prompt, outcome). Replaces the old `history_peek`.
-- `history_show(conversation_id, from=..., limit=50, around=..., before=..., after=..., direction="asc|desc", role="user,assistant")`: Read message windows (use only when `history_get` lacks required detail).
-- `history_list(agent=..., project=..., since=..., date_from=..., date_to=..., limit=10)`: Browse recent sessions.
-- `history_projects()`: Projects with session counts. Replaces the old `history_stats`.
-- Deprecated aliases kept for cached clients: `history_peek` now behaves exactly like `history_get` (the old first/last-prompt, touched-files and commands summary has no AgentsView equivalent; use `history_get` plus `history_show`), and `history_stats` behaves like `history_projects`. Prefer the new names. Removed with hstry: the `scope`, `role` (search), `after`/`before`, `source`/`workspace` search parameters (now `agent`/`project`/`since`/`date_from`/`date_to`).
-- Requires the `chronicle` command: found via the `CHRONICLE_BIN` environment variable, then `PATH`, then `~/.local/bin`.
+#### 2. AI Conversation Archive (AgentsView native MCP)
+Search prior discussions, decisions, and code forensics across Claude Code, Codex, Cursor, OpenCode, Antigravity, and more. Prefer the configured AgentsView upstream MCP tools (mcp_tool) so the remote agent uses structured search and paging directly; do not invoke a shell or run the `chronicle` CLI for this task.
+- First call `runtime_read(view="capabilities")` and confirm `mcp_tool` is available. Then call `mcp_tool(action="list", query="AgentsView")`, choose the configured AgentsView/Chronicle server, call `mcp_tool(action="list", server=...)`, and `describe` the exact tool before calling it.
+- `history_search`, `history_get`, `history_show`, `history_list`, and `history_projects` remain compatibility tools for existing clients. Use them only when no AgentsView MCP server is configured or `mcp_tool` is unavailable; `history_peek` and `history_stats` are deprecated aliases.
 
 #### 3. Multica Task & Agent Orchestration
 - **Agent Roster**: 

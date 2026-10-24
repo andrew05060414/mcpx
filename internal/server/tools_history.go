@@ -192,7 +192,7 @@ func buildHistorySearchArgs(payload map[string]any) ([]string, error) {
 		return nil, fmt.Errorf("query 和 any 只能二选一")
 	}
 
-	args := []string{"search", "--json", "--limit", strconv.Itoa(historyLimit(payload, "limit", historySearchDefaultLimit))}
+	args := []string{"search", "--json", "--include-one-shot", "--limit", strconv.Itoa(historyLimit(payload, "limit", historySearchDefaultLimit))}
 	mode := stringPayload(payload, "mode")
 	switch mode {
 	case "", "keyword":
@@ -255,7 +255,7 @@ func buildHistoryMessagesArgs(payload map[string]any) ([]string, error) {
 }
 
 func buildHistoryListArgs(payload map[string]any) ([]string, error) {
-	args := []string{"list", "--json", "--limit", strconv.Itoa(historyLimit(payload, "limit", historyListDefaultLimit))}
+	args := []string{"list", "--json", "--include-one-shot", "--limit", strconv.Itoa(historyLimit(payload, "limit", historyListDefaultLimit))}
 	return appendHistoryFilters(args, payload)
 }
 
