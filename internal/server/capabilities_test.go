@@ -49,15 +49,28 @@ func TestCapabilityCatalogMatchesRegisteredTools(t *testing.T) {
 func TestMachineToolCapabilitiesApplyRoleAndFeatureState(t *testing.T) {
 	effective := config.DefaultConfig()
 	effective.Terminal.Enabled = false
+	effective.Discovery.MCP.Enabled = false
 	viewer := remotesession.Session{Role: "viewer"}
 	items := machineToolCapabilities(effective, &viewer)
 	states := map[string]string{}
 	for _, item := range items {
 		states[item["name"].(string)] = item["state"].(string)
 	}
-	if states["read"] != "available" || states["edit"] != "forbidden" || states["execute"] != "disabled" {
+	if states["read"] != "available" || states["edit"] != "forbidden" || states["execute"] != "disabled" || states["mcp_tool"] != "disabled" {
 		t.Fatalf("unexpected capability states: %+v", states)
 	}
+	effective.Discovery.MCP.Enabled = true
+	owner := remotesession.Session{Role: "owner"}
+	items = machineToolCapabilities(effective, &owner)
+	for _, item := range items {
+		if item["name"] == "mcp_tool" {
+			if item["state"] != "available" {
+				t.Fatalf("mcp_tool should be discoverable when MCP discovery is enabled: %+v", item)
+			}
+			return
+		}
+	}
+	t.Fatal("runtime capabilities omitted mcp_tool")
 }
 
 func TestMachineCapabilitiesPublishHardLimits(t *testing.T) {

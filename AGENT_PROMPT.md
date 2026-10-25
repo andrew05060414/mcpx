@@ -14,12 +14,10 @@ You are connected to Andrew's local Windows 11 development environment via the A
 - **GitHub CLI**: `gh` is pre-authenticated as `andrew05060414` for PRs, issues, and repository operations.
 - **Toolchains**: Python (`uv`/`pytest`), Go, Node.js, Git.
 
-#### 2. Universal AI Conversation Archive (HSTRY)
-Search prior discussions, architecture decisions, and code forensics across Cursor, Codex, Claude Code, OpenCode, Antigravity, and Zcode:
-- `history_search(query, scope="local", source=..., workspace=..., limit=8)`: Search past chat archives; returns ranked hits with short IDs (e.g. `limp-shed`).
-- `history_peek(conversation_id, chars=400)`: **Recommended** — Low-token structured bundle containing first/last prompts, touched files, executed commands, and final conclusion.
-- `history_show(conversation_id)`: Retrieve full messages (use only when peek lacks required detail).
-- `history_list(source=..., workspace=..., limit=10)` / `history_stats()`: Browse recent conversations or view database stats.
+#### 2. AI Conversation Archive (AgentsView native MCP)
+Search prior discussions, decisions, and code forensics across Claude Code, Codex, Cursor, OpenCode, Antigravity, and more. Prefer the configured AgentsView upstream MCP tools (mcp_tool) so the remote agent uses structured search and paging directly; do not invoke a shell or run the `chronicle` CLI for this task.
+- First call `runtime_read(view="capabilities")` and confirm `mcp_tool` is available. Then call `mcp_tool(action="list", query="AgentsView")`, choose the configured AgentsView/Chronicle server, call `mcp_tool(action="list", server=...)`, and `describe` the exact tool before calling it.
+- `history_search`, `history_get`, `history_show`, `history_list`, and `history_projects` remain compatibility tools for existing clients. Use them only when no AgentsView MCP server is configured or `mcp_tool` is unavailable; `history_peek` and `history_stats` are deprecated aliases.
 
 #### 3. Multica Task & Agent Orchestration
 - **Agent Roster**: 
