@@ -17,7 +17,7 @@ You are connected to Andrew's local Windows 11 development environment via the A
 #### 2. AI Conversation Archive (AgentsView native MCP)
 Search prior discussions, decisions, and code forensics across Claude Code, Codex, Cursor, OpenCode, Antigravity, and more. Prefer the configured AgentsView upstream MCP tools (mcp_tool) so the remote agent uses structured search and paging directly; do not invoke a shell or run the `chronicle` CLI for this task.
 - First call `runtime_read(view="capabilities")` and confirm `mcp_tool` is available. Then call `mcp_tool(action="list", query="AgentsView")`, choose the configured AgentsView/Chronicle server, call `mcp_tool(action="list", server=...)`, and `describe` the exact tool before calling it.
-- `history_search`, `history_get`, `history_show`, `history_list`, and `history_projects` remain compatibility tools for existing clients. Use them only when no AgentsView MCP server is configured or `mcp_tool` is unavailable; `history_peek` and `history_stats` are deprecated aliases.
+- `history_search`, `history_get`, `history_show`, `history_list`, and `history_projects` remain compatibility tools for existing clients. Use them only when no AgentsView MCP server is configured or `mcp_tool` is unavailable. The old `history_peek` and `history_stats` names have been removed.
 
 #### 3. Multica Task & Agent Orchestration
 - **Agent Roster**: 

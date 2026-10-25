@@ -52,7 +52,7 @@ func clientProtocolRevision() string { return hashRevision(clientProtocolCapabil
 func capabilityGroups() map[string][]string {
 	return map[string][]string{
 		"core":    {"workspace", "session", "read", "edit", "move_out", "observe", "progress", "execute", "plan", "artifact", "skill_tool", "mcp_tool"},
-		"history": {"history_search", "history_get", "history_show", "history_list", "history_projects", "history_peek", "history_stats"},
+		"history": {"history_search", "history_get", "history_show", "history_list", "history_projects"},
 		"support": {"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "browser", "screenshot_capture", "secret_provide"},
 		"control": {
 			"ai_usage_get_status",
@@ -116,10 +116,8 @@ var toolCapabilityDefinitions = []toolCapabilityDefinition{
 	{Name: "history_search", Domain: "history"},
 	{Name: "history_get", Domain: "history"},
 	{Name: "history_projects", Domain: "history"},
-	{Name: "history_peek", Domain: "history"},
 	{Name: "history_show", Domain: "history"},
 	{Name: "history_list", Domain: "history"},
-	{Name: "history_stats", Domain: "history"},
 	{Name: "multica_get_agent", Domain: "multica"},
 	{Name: "multica_create_agent", Domain: "multica"},
 	{Name: "multica_update_agent", Domain: "multica"},

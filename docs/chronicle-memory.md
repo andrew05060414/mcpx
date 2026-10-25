@@ -1,6 +1,6 @@
 # Chronicle / AgentsView Memory in MCPX
 
-Created: 2026-10-24 | Updated: 2026-10-24 | Version: 1.0
+Created: 2026-10-24 | Updated: 2026-10-24 | Version: 1.1
 
 Use `mcp_tool` with the configured `agentsview-memory` server for conversation
 history. Its memory profile exposes only `search_content`, `get_messages`, and
@@ -20,7 +20,8 @@ Search defaults to message FTS and includes single-question sessions. Search
 supports the backend's integer message cursor; distinct-session pagination is
 owned by the native MCP. `history_show` defaults to user/assistant roles and
 projects messages to bounded dialogue fields without raw tool-call payloads.
-The old `history_peek` and `history_stats` names remain deprecated aliases.
+The retired-hstry aliases `history_peek` and `history_stats` were removed after
+local logs and the runtime state database showed no calls to either name.
 
 New retrieval behavior belongs in AgentsView and its native MCP. Remove the
 compatibility tools only after remote clients pass the native search/read/status
