@@ -171,6 +171,7 @@ func merge(global, project Config, mergeAuth bool) Config {
 		if len(project.Auth.OAuth.RedirectURIs) > 0 {
 			out.Auth.OAuth.RedirectURIs = append([]string{}, project.Auth.OAuth.RedirectURIs...)
 		}
+		out.ReadLink = project.ReadLink
 	}
 	if project.Server.TrustProxyHeaders {
 		out.Server.TrustProxyHeaders = true
