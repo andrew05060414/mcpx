@@ -54,6 +54,7 @@ func capabilityGroups() map[string][]string {
 		"core":    {"workspace", "session", "read", "edit", "move_out", "observe", "progress", "execute", "plan", "artifact", "skill_tool", "mcp_tool"},
 		"history": {"history_search", "history_get", "history_show", "history_list", "history_projects", "history_peek", "history_stats"},
 		"support": {"operation_batch", "operation_manage", "runtime_read", "environment_read", "environment", "browser", "screenshot_capture", "secret_provide"},
+		"link":    {"read_link"},
 		"control": {
 			"ai_usage_get_status",
 			"multica_list_executions", "multica_get_execution", "multica_list_agents",
@@ -103,6 +104,7 @@ var toolCapabilityDefinitions = []toolCapabilityDefinition{
 	{Name: "screenshot_capture", Domain: "screenshot", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "secret_provide", Domain: "secrets", RequiresRemoteSession: true, Roles: []string{"owner", "editor"}},
 	{Name: "ai_usage_get_status", Domain: "ai_usage"},
+	{Name: "read_link", Domain: "read_link"},
 	{Name: "multica_list_executions", Domain: "multica"},
 	{Name: "multica_get_execution", Domain: "multica"},
 	{Name: "multica_list_agents", Domain: "multica"},

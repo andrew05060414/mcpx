@@ -223,6 +223,7 @@ func TestA01A02A03A07A10A13ViaMCPProtocol(t *testing.T) {
 		"execute", "plan", "artifact", "skill_tool", "mcp_tool", "browser",
 		"runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide",
 		"ai_usage_get_status",
+		"read_link",
 		"multica_list_executions", "multica_get_execution", "multica_list_agents",
 		"multica_materialize_plan_task",
 		"plan_run_grant",

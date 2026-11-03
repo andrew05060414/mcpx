@@ -331,6 +331,26 @@ security:
 `~/.grok/skills` 和项目 `.skills`。可以在全局配置中使用
 `discovery.skills.dirs` 和 `extra_dirs` 增加或替换目录。
 
+### 读链接（read_link）
+
+`read_link(url)` 是原生工具，在 `tools/list` 里直接可见。它用本机已登录的 Ego Lite 浏览器读取一条
+知乎、X、小红书或 B站链接，清洗正文后存进 Karakeep。一次只读一个页面，读完关闭自己的 task space，不碰
+用户正在用的标签页。遇到登录、验证码或限流页面会返回 `AUTH_REQUIRED`、`RISK_CONTROLLED`、
+`RATE_LIMITED` 并停下，不会重试或绕过。
+
+MCPX 服务进程必须能运行 `ego-browser` 并连上桌面会话里的 Ego Lite。配置写在全局 `config.yaml`
+（项目 `.mcpx.yaml` 不能覆盖）：
+
+```yaml
+read_link:
+  ego_bin: C:/Users/<name>/.local/share/ego/active_version_dir/ego-browser.exe  # 省略时依次找 PATH 和该目录
+  storage: karakeep                # karakeep（默认）| memory | dry_run（只读不写）
+  karakeep_url: https://karakeep.example/api/v1
+  karakeep_api_key_file: C:/path/to/karakeep.key   # 文件内容就是 API key，不要写进 config 或仓库
+  timeout_seconds: 45              # 页面加载上限
+  settle_seconds: 8                # 等正文出现的上限
+```
+
 ### 状态保留
 
 `state.retention` 负责定期回收过期的观测、Task 日志、快照和临时记录。

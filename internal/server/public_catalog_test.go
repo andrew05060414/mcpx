@@ -72,10 +72,12 @@ func TestPublicCatalogSchemaTotalBytes(t *testing.T) {
 	if inputTotal > 70_000 {
 		t.Fatalf("public input schemas exceeded context budget: %d bytes", inputTotal)
 	}
-	if outputTotal > 18_000 {
+	// Every public tool carries the same ARC output schema (~354 bytes), so the
+	// budget grows with the tool count: 18_500 covers the catalog including read_link.
+	if outputTotal > 18_500 {
 		t.Fatalf("public output schemas exceeded context budget: %d bytes", outputTotal)
 	}
-	if total > 90_000 {
+	if total > 91_000 {
 		t.Fatalf("public tool catalog exceeded context budget: %d bytes", total)
 	}
 }
@@ -118,6 +120,7 @@ func TestPublicCatalogIsExactlyTheCleanCoreContract(t *testing.T) {
 		"execute", "plan", "artifact", "skill_tool", "mcp_tool", "browser",
 		"runtime_read", "environment_read", "environment", "screenshot_capture", "secret_provide",
 		"ai_usage_get_status",
+		"read_link",
 		"multica_list_executions", "multica_get_execution", "multica_list_agents",
 		"multica_materialize_plan_task",
 		"plan_run_grant",
