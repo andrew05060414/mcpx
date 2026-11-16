@@ -33,6 +33,7 @@ import (
 	"mcpx/internal/observation"
 	"mcpx/internal/operation"
 	"mcpx/internal/plan"
+	"mcpx/internal/readlink"
 	"mcpx/internal/remotesession"
 	"mcpx/internal/screenshot"
 	"mcpx/internal/secrets"
@@ -80,6 +81,8 @@ type Runtime struct {
 	operations       *operation.Service
 	observerSocket   *observation.SocketServer
 	activityMu       sync.Mutex
+	readLinkMu       sync.Mutex
+	readLinkSvc      *readlink.Service
 	sessionBindingMu sync.RWMutex
 	sessionBindings  map[string]string
 	closeOnce        sync.Once

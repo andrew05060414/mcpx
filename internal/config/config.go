@@ -13,6 +13,9 @@ type Config struct {
 	Logging    LoggingConfig    `yaml:"logging"`
 	Transport  TransportConfig  `yaml:"transport"`
 	Limits     LimitsConfig     `yaml:"limits"`
+	// ReadLink configures the native read_link tool. Process-wide: a project
+	// .mcpx.yaml cannot redirect it to another browser binary or Karakeep.
+	ReadLink ReadLinkConfig `yaml:"read_link,omitempty"`
 	// Project-only fields merged into effective view:
 	Description string `yaml:"description,omitempty"`
 }
@@ -48,6 +51,22 @@ type OAuthConfig struct {
 	ClientID     string   `yaml:"client_id"`
 	ClientSecret string   `yaml:"client_secret"`
 	RedirectURIs []string `yaml:"redirect_uris"`
+}
+
+// ReadLinkConfig configures read_link. The Karakeep API key is only ever read
+// from KarakeepAPIKeyFile; it never appears in config, logs, or tool output.
+type ReadLinkConfig struct {
+	// EgoBin is the ego-browser CLI path. Empty: PATH, then ~/.local/share/ego/active_version_dir.
+	EgoBin string `yaml:"ego_bin,omitempty"`
+	// Storage is karakeep (default), memory, or dry_run (read but save nothing).
+	Storage string `yaml:"storage,omitempty"`
+	// KarakeepURL is the Karakeep API base, for example https://karakeep.example/api/v1.
+	KarakeepURL string `yaml:"karakeep_url,omitempty"`
+	// KarakeepAPIKeyFile is a file whose content is the Karakeep API key.
+	KarakeepAPIKeyFile string `yaml:"karakeep_api_key_file,omitempty"`
+	// TimeoutSeconds bounds page load (default 45); SettleSeconds bounds the wait for body text (default 8).
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty"`
+	SettleSeconds  int `yaml:"settle_seconds,omitempty"`
 }
 
 type TransportConfig struct {

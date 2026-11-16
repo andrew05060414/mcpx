@@ -31,6 +31,7 @@ var (
 
 func (r *Runtime) registerArcControlPlaneTools(s *mcp.Server) {
 	r.registerAIUsageTools(s)
+	r.registerReadLinkTool(s)
 	r.registerMulticaControlTools(s)
 }
 
