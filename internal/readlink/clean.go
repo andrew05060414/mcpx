@@ -24,8 +24,10 @@ var (
 	blankRun    = regexp.MustCompile(`\n{3,}`)
 
 	rateLimitPattern = regexp.MustCompile(`(?i)(?:too many requests|请求过于频繁|操作频繁|rate limit)`)
-	riskPattern      = regexp.MustCompile(`(?i)(?:captcha|challenge|verify you are human|安全验证|滑块|验证码|风控|风险|访问受限|access denied|website-login.*(?:error|risk)|error_code=)`)
-	authPattern      = regexp.MustCompile(`(?i)(?:/login|/signin|website-login|登录|请先登录|sign in)`)
+	riskPattern      = regexp.MustCompile(`(?i)(?:captcha|verify you are human|安全验证|滑块|验证码|风控|访问受限|access denied)`)
+	riskURLPattern   = regexp.MustCompile(`(?i)(?:/challenge|website-login.*(?:error|risk)|error_code=)`)
+	authPattern      = regexp.MustCompile(`(?i)(?:请先登录|sign in)`)
+	authURLPattern   = regexp.MustCompile(`(?i)(?:/login|/signin|website-login)`)
 )
 
 // truncateRunes keeps at most max characters (runes).
@@ -98,10 +100,10 @@ func DetectStopState(status int, finalURL, title, text string) error {
 	if status == statusRateLimit || rateLimitPattern.MatchString(location) {
 		return newError("RATE_LIMITED", "the platform rate-limited this request; retry manually later.", 429)
 	}
-	if status == statusForbidden || riskPattern.MatchString(location) {
+	if status == statusForbidden || riskURLPattern.MatchString(finalURL) || riskPattern.MatchString(location) {
 		return newError("RISK_CONTROLLED", "the platform asked for manual verification; automatic bypass is disabled.", 424)
 	}
-	if status == statusUnauthorized || authPattern.MatchString(location) {
+	if status == statusUnauthorized || authURLPattern.MatchString(finalURL) || authPattern.MatchString(location) {
 		return newError("AUTH_REQUIRED", "the platform requires a manual login.", 424)
 	}
 	return nil
