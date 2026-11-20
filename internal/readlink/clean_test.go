@@ -66,6 +66,55 @@ func TestDetectStopStateMapsStopCodes(t *testing.T) {
 	}
 }
 
+func TestDetectStopStateDistinguishesArticlesFromStopPages(t *testing.T) {
+	cases := []struct {
+		name  string
+		url   string
+		title string
+		text  string
+		want  string
+	}{
+		{name: "investment risk", text: "投资有风险，入市需谨慎……"},
+		{name: "database challenge", text: "The challenge of scaling databases is real."},
+		{name: "router login tutorial", text: "本期视频教你如何登录路由器后台。"},
+		{name: "ordinary title", title: "投资风险与登录教程：a challenge", text: "普通正文"},
+		{name: "login path in article", text: "打开 /login 或 /signin 查看 website-login 示例。"},
+		{name: "risk URL examples in article", text: "website-login/error 和 error_code= 是接口示例。"},
+		{name: "security verification", text: "请完成安全验证", want: "RISK_CONTROLLED"},
+		{name: "verification code", text: "验证码", want: "RISK_CONTROLLED"},
+		{name: "captcha", text: "CAPTCHA", want: "RISK_CONTROLLED"},
+		{name: "human verification", text: "Verify you are human", want: "RISK_CONTROLLED"},
+		{name: "login prompt", text: "请先登录", want: "AUTH_REQUIRED"},
+		{name: "sign in prompt", text: "Sign in to X", want: "AUTH_REQUIRED"},
+		{name: "login URL", url: "https://www.zhihu.com/login", want: "AUTH_REQUIRED"},
+		{name: "signin URL", url: "https://www.zhihu.com/signin?next=%2F", want: "AUTH_REQUIRED"},
+		{name: "website login URL", url: "https://www.xiaohongshu.com/website-login", want: "AUTH_REQUIRED"},
+		{name: "website risk URL", url: "https://www.xiaohongshu.com/website-login/error?error_code=300012", want: "RISK_CONTROLLED"},
+		{name: "challenge URL", url: "https://www.zhihu.com/challenge", want: "RISK_CONTROLLED"},
+		{name: "verification title", title: "安全验证", want: "RISK_CONTROLLED"},
+		{name: "login title", title: "请先登录", want: "AUTH_REQUIRED"},
+		{name: "verification at scan boundary", text: strings.Repeat("字", 4997) + "验证码", want: "RISK_CONTROLLED"},
+		{name: "verification after scan boundary", text: strings.Repeat("字", 5000) + "验证码"},
+		{name: "login after scan boundary", text: strings.Repeat("字", 5000) + "登录"},
+		{name: "login prompt after scan boundary", text: strings.Repeat("字", 5000) + "请先登录"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.url == "" {
+				tc.url = "https://www.zhihu.com/question/1"
+			}
+			if tc.title == "" {
+				tc.title = "A question"
+			}
+			got := errCode(DetectStopState(200, tc.url, tc.title, tc.text))
+			t.Logf("code=%q, want=%q", got, tc.want)
+			if got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeArticle(t *testing.T) {
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 
